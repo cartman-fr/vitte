@@ -1,0 +1,11 @@
+# EXPECT: Ada
+# EXPECT: Hello, Ada!
+class User {
+  name: "unknown"
+  id: 0
+  greet(self) -> print("Hello, " + self.name + "!")
+}
+
+u = new User { name: "Ada", id: 42 }
+print(u.name)
+u.greet()

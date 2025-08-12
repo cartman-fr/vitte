@@ -1,0 +1,7 @@
+# Muter une capture dans une lambda via sucre '<-'
+count = 0
+inc = x -> __set__(count, count + x)  # forme explicite
+# ou, avec le sucre:
+inc2 = x -> count <- count + x
+inc(2)
+inc2(3)

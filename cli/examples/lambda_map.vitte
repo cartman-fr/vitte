@@ -1,0 +1,8 @@
+# EXPECT: [2, 4, 6]
+# EXPECT: 1
+# EXPECT: 2
+# EXPECT: 3
+double = (x) -> x * 2
+xs = [1,2,3]
+print(map(double, xs))
+each((x)->print(x), xs)

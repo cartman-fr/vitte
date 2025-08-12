@@ -1,0 +1,4 @@
+# json — API étendue
+fn encode(v:any) -> string { return "{}" }
+fn decode(s:string) -> Result[any, JsonErr] { return Err(JsonErr::Parse) }
+struct Cursor {}  # SAX

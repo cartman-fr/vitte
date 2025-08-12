@@ -1,0 +1,1 @@
+# vitte-templates (skeleton)

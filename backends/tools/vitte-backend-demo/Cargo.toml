@@ -1,0 +1,10 @@
+[package]
+name="vitte-backend-demo"
+version="0.1.0"
+edition="2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+vitte-backend-api = { path = "../../api" }
+vitte-backend-cranelift = { path = "../../cranelift" }
+vitte-backend-llvm = { path = "../../llvm" }

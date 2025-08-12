@@ -1,0 +1,7 @@
+use async, channel, log
+async fn job(i:i32){ log::info("job ", i) }
+fn main(){
+  let (tx, rx) = channel::channel[i32](1000)
+  for i in 0..1000 { channel::send(tx, i) }
+  async::spawn_task(|| async { while let Some(v)=channel::recv(rx){ job(v).await } })
+}

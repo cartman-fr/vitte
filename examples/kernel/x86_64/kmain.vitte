@@ -1,0 +1,5 @@
+
+fn kmain(){
+  // Ecrire "OK" sur port série (placeholder) puis loop
+  loop { /* halt */ }
+}

@@ -1,0 +1,10 @@
+# Bytecode v5: héritage, defaults parent fusionnés, lookup parent
+class Animal {
+  sound: "???"
+  speak(self) -> print(self.sound)
+}
+class Cat : Animal {
+  sound: "meow"
+}
+c = new Cat {}
+c.speak()   # devrait appeler Animal.speak avec sound="meow"

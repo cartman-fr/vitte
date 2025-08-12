@@ -1,0 +1,8 @@
+# fs — API étendue
+struct Metadata { size:u64, is_dir:bool, readonly:bool }
+fn read(path:string) -> Result<bytes, IoErr] { return Err(IoErr::NoEnt) }
+fn write(path:string, data:bytes) -> Result<(), IoErr] { return Ok(()) }
+fn create_dir_all(path:string) -> Result<(), IoErr] { return Ok(()) }
+fn remove_file(path:string) -> Result<(), IoErr] { return Ok(()) }
+fn metadata(path:string) -> Result<Metadata, IoErr] { return Err(IoErr::NoEnt) }
+fn walkdir(path:string) -> Iterator[string] { yield path }

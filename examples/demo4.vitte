@@ -1,0 +1,16 @@
+# From-import alias + GC + multi-for comp
+from "examples/math.vitte" import square as sq, add as plus
+
+def main():
+  xs = [1,2,3]
+  ys = [10,20]
+  print([x + y for x in xs for y in ys])     # [11,21,12,22,13,23]
+  print(sq(9))                               # 81
+  # stress GC: create & drop arrays
+  i = 0
+  while i < 1000:
+    tmp = [i, i+1, i+2]
+    i = i + 1
+  gc()
+  print("ok")
+main()

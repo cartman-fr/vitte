@@ -1,0 +1,1 @@
+// ethernet stub

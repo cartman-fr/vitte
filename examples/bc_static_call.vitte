@@ -1,0 +1,3 @@
+# v6: static call
+class Math { static add(a,b) -> a + b }
+print(Math.add(2,3))

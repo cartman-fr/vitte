@@ -1,0 +1,2 @@
+# Concat string-literals -> abaissement LLVM dédié
+"hel" + "lo"

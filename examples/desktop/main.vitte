@@ -1,0 +1,2 @@
+extern(c) fn start_gui()->i32
+fn main(){ let rc = start_gui(); if rc!=0 { panic("gui failed") } }

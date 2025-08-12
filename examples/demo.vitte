@@ -1,0 +1,18 @@
+# Ultra démo : lambdas, dot methods, index/slice, map/each, len, push/pop
+def inc(x): return x + 1
+
+def main():
+  xs = [1,2,3,4]
+  print(xs.len())            # 4
+  xs.push(5)
+  print(xs)                  # [1,2,3,4,5]
+  print(xs[0])               # 1
+  print(xs[1:4])             # [2,3,4]
+  ys = xs.map(|x| x+1)
+  print(ys)                  # [2,3,4,5,6]
+  xs.each(|x| print(x))
+  s = "bonjour"
+  print(s.len())             # 7
+  print(s.slice(1,4))        # onj
+  print( (1<2) ? 10 : 20 )
+main()

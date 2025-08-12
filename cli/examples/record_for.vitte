@@ -1,0 +1,4 @@
+# EXPECT: name=Ada
+# EXPECT: id=42
+u = {name:"Ada", id:42}
+for (k, v) in u do print(k + "=" + str(v))

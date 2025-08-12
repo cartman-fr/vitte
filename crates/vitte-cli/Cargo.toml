@@ -1,0 +1,16 @@
+[package]
+name = "vitte-cli"
+version = "0.2.0"
+edition = "2021"
+[dependencies]
+vitte-ast = { path = "../vitte-ast" }
+vitte-fmt = { path = "../vitte-fmt" }
+vitte-doc = { path = "../vitte-doc" }
+vitte-infer = { path = "../vitte-infer" }
+vitte-bytecode = { path = "../vitte-bytecode" }
+vitte-vm = { path = "../vitte-vm" }
+vitte-codegen-llvm = { path = "../vitte-codegen-llvm" }
+vitte-lsp = { path = "../vitte-lsp" }
+[bin]
+name = "vitte"
+path = "src/main.rs"

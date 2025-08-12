@@ -1,0 +1,4 @@
+import "math.vitte"
+lst = [1,2,3]
+res = map(lst, x -> x * 2)
+print(len(res))

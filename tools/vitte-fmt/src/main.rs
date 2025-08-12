@@ -1,0 +1,1 @@
+fn main(){ println!("vitte-fmt 0.1.0 (skeleton)"); }

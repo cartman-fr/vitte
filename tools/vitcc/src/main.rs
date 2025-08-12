@@ -1,0 +1,1 @@
+fn main(){ println!("vitcc 0.1.0 (skeleton)"); }

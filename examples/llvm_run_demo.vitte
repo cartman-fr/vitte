@@ -1,0 +1,4 @@
+# Demo pour --emit llvm-run (arithmétique pure)
+x = 40
+y = 2
+x + y

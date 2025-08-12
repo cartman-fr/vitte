@@ -1,0 +1,10 @@
+# io — API étendue
+fn print(args: any...) {}
+fn eprint(args: any...) {}
+
+struct Reader {}
+struct Writer {}
+fn stdout() -> Writer { return Writer{} }
+fn stdin() -> Reader { return Reader{} }
+fn write_all(w: Writer, buf: &[u8]) -> Result<usize, IoErr> { return Ok(0) }
+fn read_exact(r: Reader, buf: &mut [u8]) -> Result<usize, IoErr> { return Ok(0) }

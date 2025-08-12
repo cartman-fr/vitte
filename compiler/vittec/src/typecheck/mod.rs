@@ -1,0 +1,1 @@
+// typecheck module stub

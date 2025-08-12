@@ -1,0 +1,8 @@
+# EXPECT: hello Ada
+# EXPECT: <class>
+trait Printable { to_str(self) }
+class User { name: "Ada" to_str(self) -> "hello " + self.name }
+impl Printable for User
+u = new User {}
+print(u.to_str())
+print(classof(User))

@@ -1,0 +1,11 @@
+# Closures capturant un local
+n = 10
+f = x -> x + n
+print(f(5))
+
+# Lambda dans lambda (map)
+lst = [1,2,3]
+g = scale -> (x -> x * scale)
+h = g(3)
+res = map(lst, h)
+print(len(res))

@@ -1,0 +1,9 @@
+
+[package]
+name = "vittec"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "vittec-min"
+path = "src/main.rs"

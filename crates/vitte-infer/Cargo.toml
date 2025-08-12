@@ -1,0 +1,10 @@
+[package]
+name = "vitte-infer"
+version = "0.2.0"
+edition = "2021"
+[dependencies]
+vitte-ast = { path = "../vitte-ast" }
+vitte-ty  = { path = "../vitte-ty" }
+vitte-std = { path = "../vitte-std" }
+[lib]
+path = "src/lib.rs"

@@ -1,0 +1,8 @@
+[package]
+name = "vitte-codegen-llvm"
+version = "0.2.0"
+edition = "2021"
+[dependencies]
+vitte-ast = { path = "../vitte-ast" }
+[lib]
+path = "src/lib.rs"

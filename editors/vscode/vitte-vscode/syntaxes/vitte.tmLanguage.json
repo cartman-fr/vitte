@@ -1,0 +1,52 @@
+{
+  "scopeName": "source.vitte",
+  "patterns": [
+    {
+      "name": "comment.line",
+      "match": "//.*$"
+    },
+    {
+      "name": "comment.block",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    {
+      "name": "keyword.control",
+      "match": "\\b(fn|let|mut|const|struct|enum|union|trait|impl|use|mod|pub|extern|return|if|else|match|for|while|loop|break|continue|defer|async|await|spawn|try|yield|unsafe|where|macro|type)\\b"
+    },
+    {
+      "name": "keyword.other",
+      "match": "\\b(repr|align|pack|no_mangle|inline|cold|export|test|bench|cfg)\\b"
+    },
+    {
+      "name": "storage.type",
+      "match": "\\b(i(8|16|32|64|128)|u(8|16|32|64|128)|f(16|32|64)|bool|char|string|usize)\\b"
+    },
+    {
+      "name": "constant.numeric",
+      "match": "\\b0x[0-9A-Fa-f_]+|\\b0b[01_]+|\\b\\d[\\d_]*(?:\\.\\d+)?(?:f(16|32|64)|i\\d+|u\\d+)?\\b"
+    },
+    {
+      "name": "string.quoted.double",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "entity.name.function",
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()"
+    },
+    {
+      "name": "entity.name.type",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    }
+  ],
+  "repository": {},
+  "injections": {},
+  "names": "Vitte"
+}

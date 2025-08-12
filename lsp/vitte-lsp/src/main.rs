@@ -1,0 +1,1 @@
+fn main(){ println!("vitte-lsp (skeleton)"); }

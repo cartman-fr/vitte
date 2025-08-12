@@ -1,0 +1,5 @@
+# Bytecode path: records + globals + fields
+user = {name:"Ada", id:42}
+print(user.name)
+user.id = 43
+print(user.id)

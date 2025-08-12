@@ -1,0 +1,1 @@
+fn main(){ println!("vitte-bench 0.1.0 (skeleton)"); }

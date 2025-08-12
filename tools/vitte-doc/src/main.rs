@@ -1,0 +1,1 @@
+fn main(){ println!("vitte-doc 0.1.0 (skeleton)"); }

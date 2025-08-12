@@ -1,0 +1,9 @@
+[book]
+authors = ["Vitte Devs"]
+language = "fr"
+multilingual = false
+src = "src"
+title = "Vitte Lang — Guide"
+
+[output.html]
+default-theme = "light"

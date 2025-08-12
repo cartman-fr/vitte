@@ -1,0 +1,11 @@
+# EXPECT: 0
+# EXPECT: 1
+# EXPECT: 2
+xs = [0,1,2]
+for x in xs do print(x)
+xs[1] = 42
+user = {name:"Ada", id:1}
+user.name = "Lovelace"
+print(xs[0])
+print(xs[1] == 42)
+print(user.name)

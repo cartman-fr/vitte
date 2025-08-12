@@ -1,0 +1,40 @@
+{
+  "name": "vitte-vscode",
+  "displayName": "Vitte Language Support",
+  "version": "0.1.0",
+  "publisher": "vitte-lang",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:vitte"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "vitte",
+        "aliases": [
+          "Vitte",
+          "vitte"
+        ],
+        "extensions": [
+          ".vitte",
+          ".vit"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://example.com/vitte-lang.git"
+  },
+  "icon": "icon.svg",
+  "bugs": {
+    "url": "https://example.com/vitte-lang/issues"
+  }
+}

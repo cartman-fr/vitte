@@ -1,0 +1,24 @@
+
+name: release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  build-release:
+    strategy:
+      matrix: { os: [ubuntu-latest, macos-latest, windows-latest] }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build toolchain
+        run: cargo build --workspace --release
+      - name: Package .vitx
+        run: echo "vitpack (placeholder)"
+      - name: Sign
+        run: echo "vitsign (placeholder)"
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitte-binaries-${{ matrix.os }}
+          path: target/**/*
