@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
-use vitte_ast::{tokenize, Parser};
+use std::path::{Path, PathBuf};
+use vitte_ast::{tokenize, Parser, Expr};
 use vitte_fmt as fmt;
 use vitte_doc as doc;
 use vitte_infer as infer;
@@ -9,8 +10,35 @@ use vitte_vm as vm;
 use vitte_codegen_llvm as llc;
 
 fn usage()->!{
-    eprintln!("vitte <run|fmt|doc|llc|build|exec|infer|lsp> [--backend=interp|vm|llvm] ...");
+    eprintln!("vitte <run|fmt|doc|llc|build|exec|infer|lsp> [--backend=vm|llvm] ...");
     std::process::exit(2);
+}
+
+fn load_inline(file:&Path) -> Expr {
+    let src = fs::read_to_string(file).expect("read");
+    let toks = tokenize(&src); let mut p = Parser::new(toks);
+    let prog = p.parse_program().expect("parse");
+    expand_imports(file.parent().unwrap_or(Path::new(".")), prog)
+}
+
+fn expand_imports(base:&Path, e:Expr) -> Expr {
+    match e {
+        Expr::Prog(xs) => {
+            let mut out = vec![];
+            for x in xs {
+                match x {
+                    Expr::Import(path) => {
+                        let p = base.join(path);
+                        let sub = load_inline(&p);
+                        if let Expr::Prog(ys) = sub { out.extend(ys); } else { out.push(sub); }
+                    }
+                    other => out.push(expand_imports(base, other)),
+                }
+            }
+            Expr::Prog(out)
+        }
+        other => other,
+    }
 }
 
 fn main(){
@@ -18,36 +46,37 @@ fn main(){
     let cmd = args.next().unwrap_or_else(|| usage());
     match cmd.as_str(){
         "run" => {
-            let mut backend = String::from("interp");
-            if let Some(flag) = args.clone().next() { if flag.starts_with("--backend="){ backend = flag.split('=').nth(1).unwrap().to_string(); let _=args.next(); } }
-            let file = args.next().unwrap_or_else(|| { eprintln!("run <file> [--backend=interp|vm|llvm]"); std::process::exit(2); });
-            let src = fs::read_to_string(&file).expect("read");
-            run_backend(&backend, &file, &src);
+            let backend = "vm".to_string();
+            let file = args.next().unwrap_or_else(|| { eprintln!("run <file>"); std::process::exit(2); });
+            let prog = load_inline(Path::new(&file));
+            match backend.as_str() {
+                "vm" => { let ch = bc::compile(&prog); let mut m = vm::VM::new(); m.run(&ch); }
+                "llvm" => { let ir = llc::emit_ir(&prog, &file); println!("{}", ir); }
+                _ => {}
+            }
         }
         "fmt" => {
             let file = args.next().unwrap_or_else(|| { eprintln!("fmt <file>"); std::process::exit(2); });
-            let src = fs::read_to_string(&file).expect("read");
-            let toks = tokenize(&src); let mut p = Parser::new(toks); let prog = p.parse_program().expect("parse");
+            let prog = load_inline(Path::new(&file));
             println!("{}", fmt::format(&prog));
         }
         "doc" => {
             let input = args.next().unwrap_or_else(|| { eprintln!("doc <in.vitte> <out.html>"); std::process::exit(2); });
             let output = args.next().unwrap_or_else(|| { eprintln!("doc <in.vitte> <out.html>"); std::process::exit(2); });
-            let src = fs::read_to_string(&input).expect("read");
-            fs::write(&output, doc::generate(&src)).expect("write"); eprintln!("Doc écrite: {}", output);
+            let prog = load_inline(Path::new(&input));
+            let s = fmt::format(&prog);
+            fs::write(&output, doc::generate(&s)).expect("write"); eprintln!("Doc écrite: {}", output);
         }
         "llc" => {
             let file = args.next().unwrap_or_else(|| { eprintln!("llc <file>"); std::process::exit(2); });
-            let src = fs::read_to_string(&file).expect("read");
-            let toks = tokenize(&src); let mut p = Parser::new(toks); let prog = p.parse_program().expect("parse");
+            let prog = load_inline(Path::new(&file));
             let ir = llc::emit_ir(&prog, &file);
             println!("{}", ir);
         }
         "build" => {
             let input = args.next().unwrap_or_else(|| { eprintln!("build <in.vitte> <out.vbc>"); std::process::exit(2); });
             let output = args.next().unwrap_or_else(|| { eprintln!("build <in.vitte> <out.vbc>"); std::process::exit(2); });
-            let src = fs::read_to_string(&input).expect("read");
-            let toks = tokenize(&src); let mut p = Parser::new(toks); let prog = p.parse_program().expect("parse");
+            let prog = load_inline(Path::new(&input));
             let chunk = bc::compile(&prog);
             let mut buf = Vec::new();
             buf.extend_from_slice(&(chunk.code.len() as u32).to_le_bytes());
@@ -75,30 +104,12 @@ fn main(){
         }
         "infer" => {
             let file = args.next().unwrap_or_else(|| { eprintln!("infer <file>"); std::process::exit(2); });
-            let src = fs::read_to_string(&file).expect("read");
-            let toks = tokenize(&src); let mut p = Parser::new(toks); let prog = p.parse_program().expect("parse");
-            let mut i = infer::Infer::new(); let mut env = std::collections::HashMap::new();
+            let prog = load_inline(Path::new(&file));
+            let mut i = infer::Infer::default(); let mut env = std::collections::HashMap::new();
             let t = infer::infer_expr(&mut i, &mut env, &prog);
             println!("{:?}", t);
         }
         "lsp" => { vitte_lsp::serve_stdio(); }
         _ => usage(),
-    }
-}
-
-fn run_backend(backend:&str, file:&str, src:&str){
-    let toks = vitte_ast::tokenize(src);
-    let mut p = Parser::new(toks);
-    let prog = match p.parse_program(){ Ok(x)=>x, Err(e)=>{ eprintln!("Parse error: {}", e); return; } };
-    match backend {
-        "interp" | "vm" => {
-            let ch = bc::compile(&prog);
-            let mut m = vm::VM::new(); m.run(&ch);
-        }
-        "llvm" => {
-            let ir = llc::emit_ir(&prog, file);
-            println!("{}", ir);
-        }
-        _ => { eprintln!("backend inconnu: {}", backend); }
     }
 }

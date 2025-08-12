@@ -38,19 +38,11 @@ pub fn tokenize(src: &str) -> Vec<Token> {
             b'-' => { if s.get(i+1)==Some(&b'>'){ i+=2; out.push(Token::Arrow) } else { i+=1; out.push(Token::Sym('-')) } }
             b'+'|b'*'|b'/'|b'{'|b'}'|b'(' | b')' | b'[' | b']' | b',' | b':' | b'=' => {
                 i+=1; out.push(match c {
-                    b'+' => Token::Sym('+'),
-                    b'*' => Token::Sym('*'),
-                    b'/' => Token::Sym('/'),
-                    b'{' => Token::LBrace,
-                    b'}' => Token::RBrace,
-                    b'(' => Token::LParen,
-                    b')' => Token::RParen,
-                    b'[' => Token::LBrack,
-                    b']' => Token::RBrack,
-                    b',' => Token::Comma,
-                    b':' => Token::Colon,
-                    b'=' => Token::Eq,
-                    _ => unreachable!(),
+                    b'+' => Token::Sym('+'), b'*' => Token::Sym('*'), b'/' => Token::Sym('/'),
+                    b'{' => Token::LBrace, b'}' => Token::RBrace,
+                    b'(' => Token::LParen, b')' => Token::RParen,
+                    b'[' => Token::LBrack, b']' => Token::RBrack,
+                    b',' => Token::Comma, b':' => Token::Colon, b'=' => Token::Eq, _ => unreachable!(),
                 });
             }
             b';' | b'\n' => { i+=1; out.push(Token::Semi); }

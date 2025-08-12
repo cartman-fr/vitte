@@ -1,0 +1,16 @@
+[workspace]
+members = [
+  "crates/vitte-ast",
+  "crates/vitte-ty",
+  "crates/vitte-std",
+  "crates/vitte-resolver",
+  "crates/vitte-infer",
+  "crates/vitte-bytecode",
+  "crates/vitte-vm",
+  "crates/vitte-codegen-llvm",
+  "crates/vitte-fmt",
+  "crates/vitte-doc",
+  "crates/vitte-lsp",
+  "crates/vitte-cli",
+]
+resolver = "2"

@@ -1,1 +1,2 @@
-if 1 then print(1) else print(0)
+if 0 then print(1) else print("nope")
+if 1 then print("ok") else print(0)
