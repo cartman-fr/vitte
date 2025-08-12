@@ -1,6 +1,6 @@
 [package]
-name = "vitte-lsp"
-version = "0.4.0"
+name = "vitte-hir"
+version = "0.5.0"
 edition = "2021"
 [dependencies]
 vitte-ast = { path = "../vitte-ast" }

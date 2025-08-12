@@ -10,7 +10,7 @@ use vitte_vm as vm;
 use vitte_codegen_llvm as llc;
 
 fn usage()->!{
-    eprintln!("vitte <run|fmt|doc|llc|build|exec|infer|lsp> [--backend=vm|llvm] ...");
+    eprintln!("vitte <run|fmt|doc|llc|build|exec|infer|lsp> ...");
     std::process::exit(2);
 }
 
@@ -46,14 +46,10 @@ fn main(){
     let cmd = args.next().unwrap_or_else(|| usage());
     match cmd.as_str(){
         "run" => {
-            let backend = "vm".to_string();
             let file = args.next().unwrap_or_else(|| { eprintln!("run <file>"); std::process::exit(2); });
             let prog = load_inline(Path::new(&file));
-            match backend.as_str() {
-                "vm" => { let ch = bc::compile(&prog); let mut m = vm::VM::new(); m.run(&ch); }
-                "llvm" => { let ir = llc::emit_ir(&prog, &file); println!("{}", ir); }
-                _ => {}
-            }
+            let chunk = bc::compile(&prog);
+            let mut m = vm::VM::new(); m.run(&chunk);
         }
         "fmt" => {
             let file = args.next().unwrap_or_else(|| { eprintln!("fmt <file>"); std::process::exit(2); });
@@ -85,6 +81,13 @@ fn main(){
             for n in chunk.const_i64 { buf.extend_from_slice(&n.to_le_bytes()); }
             buf.extend_from_slice(&(chunk.const_str.len() as u32).to_le_bytes());
             for s in chunk.const_str { let b=s.into_bytes(); buf.extend_from_slice(&(b.len() as u32).to_le_bytes()); buf.extend_from_slice(&b); }
+            // functions
+            buf.extend_from_slice(&(chunk.funs.len() as u32).to_le_bytes());
+            for f in chunk.funs {
+                let nb = f.name.as_bytes(); buf.extend_from_slice(&(nb.len() as u32).to_le_bytes()); buf.extend_from_slice(nb);
+                buf.extend_from_slice(&f.arity.to_le_bytes());
+                buf.extend_from_slice(&(f.code.len() as u32).to_le_bytes()); buf.extend_from_slice(&f.code);
+            }
             fs::write(&output, buf).expect("write");
             eprintln!("Bytecode: {}", output);
         }
@@ -95,11 +98,18 @@ fn main(){
             let mut rd_u32 = |d:&[u8]|{ let mut b=[0u8;4]; b.copy_from_slice(&d[off..off+4]); off+=4; u32::from_le_bytes(b) };
             let code_len = rd_u32(&data) as usize;
             let code = data[off..off+code_len].to_vec(); off+=code_len;
-            let mut chunk = bc::Chunk{ code, const_i64: vec![], const_str: vec![] };
+            let mut chunk = bc::Chunk{ code, const_i64: vec![], const_str: vec![], funs: vec![] };
             let i64len = rd_u32(&data) as usize;
             for _ in 0..i64len { let mut b=[0u8;8]; b.copy_from_slice(&data[off..off+8]); off+=8; chunk.const_i64.push(i64::from_le_bytes(b)); }
             let strlen = rd_u32(&data) as usize;
             for _ in 0..strlen { let l = rd_u32(&data) as usize; let s = String::from_utf8(data[off..off+l].to_vec()).unwrap(); off+=l; chunk.const_str.push(s); }
+            let funlen = rd_u32(&data) as usize;
+            for _ in 0..funlen {
+                let nl = rd_u32(&data) as usize; let name = String::from_utf8(data[off..off+nl].to_vec()).unwrap(); off+=nl;
+                let mut a=[0u8;4]; a.copy_from_slice(&data[off..off+4]); off+=4; let arity = u32::from_le_bytes(a);
+                let clen = rd_u32(&data) as usize; let code = data[off..off+clen].to_vec(); off+=clen;
+                chunk.funs.push(vitte_bytecode::Function{ name, arity, code });
+            }
             let mut m = vm::VM::new(); m.run(&chunk);
         }
         "infer" => {

@@ -156,7 +156,7 @@ impl Parser{
             T::Id(x)=>Ok(Expr::Var(x)),
             T::Sym('-')=>{ let e=self.parse_expr_bp(80)?; Ok(Expr::Unary{ op:'-', a: Box::new(e) }) }
             T::LParen=>{
-                // (x,y)->e  |  (e)
+                // lambda? (x,y)->e
                 let save = self.i;
                 let mut params = vec![]; let mut ok = true;
                 if !matches!(self.peek(), T::RParen) {
@@ -193,7 +193,7 @@ impl Parser{
                 let mut fs = vec![];
                 if !matches!(self.peek(), T::RBrace){
                     loop {
-                        let k = match self.bump(){ T::Id(s)=>s, _=>return Err("clé attendue".into()) };
+                        let k = match self.bump()){ T::Id(s)=>s, _=>return Err("clé attendue".into()) };
                         if !matches!(self.bump(), T::Colon){ return Err("':' manquant".into()); }
                         let v = self.parse_expr_bp(0)?;
                         fs.push((k, v));
