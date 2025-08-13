@@ -1,10 +1,10 @@
 ###############################################################################
-# .gitattributes — Vitte (Option B : officiel Linguist)
-# - Détection GitHub Linguist sur Vitte
+# .gitattributes — Vitte (Détection immédiate + règles utiles)
+# - Forcer la détection GitHub Linguist sur Vitte (TON dépôt, effet instantané)
 # - Normalisation EOL
-# - Binaires & Git LFS (optionnel)
-# - Règles diff/merge utiles
-# - Export des archives
+# - Binaires & (option) Git LFS
+# - Règles diff/merge sûres
+# - Export des archives propres
 ###############################################################################
 
 ########################################
@@ -14,36 +14,40 @@
 # Extensions Vitte : affichage et stats en "Vitte"
 *.vit    linguist-language=Vitte
 *.vitte  linguist-language=Vitte
+*.vitx   linguist-language=Vitte
 
 # Dossiers à exclure des statistiques
-vendor/**           linguist-vendored
-third_party/**      linguist-vendored
-external/**         linguist-vendored
+vendor/**      linguist-vendored
+third_party/** linguist-vendored
+external/**    linguist-vendored
 
 # Code généré (ne compte pas dans les stats)
-generated/**        linguist-generated
-dist/**             linguist-generated
-build/**            linguist-generated
-target/**           linguist-generated
+generated/**   linguist-generated
+dist/**        linguist-generated
+build/**       linguist-generated
+target/**      linguist-generated
 
-# Documentation (ne biaise pas la barre des langages)
-docs/**             linguist-documentation
-**/*.md             linguist-documentation
-**/*.rst            linguist-documentation
-**/*.adoc           linguist-documentation
+# Documentation (évite de biaiser la barre des langages)
+docs/**        linguist-documentation
+**/*.md        linguist-documentation
+**/*.rst       linguist-documentation
+**/*.adoc      linguist-documentation
 
-# Tests / exemples (facultatif : retire des stats pour plus de pureté)
-tests/**            linguist-detectable=false
-test/**             linguist-detectable=false
-examples/**         linguist-detectable=false
-samples/**          linguist-detectable=false
-snippets/**         linguist-detectable=false
+# Tests / exemples — retire des stats si tu veux des % "code pur"
+tests/**       linguist-detectable=false
+test/**        linguist-detectable=false
+examples/**    linguist-detectable=false
+samples/**     linguist-detectable=false
+snippets/**    linguist-detectable=false
+
+# (Astuce) laisse AU MOINS 1 fichier de code détectable pour Vitte
+# samples/hello.vitte linguist-detectable=true
 
 ########################################
 # 1) Fins de ligne & normalisation     #
 ########################################
 
-# Par défaut : texte auto + LF
+# Par défaut : texte auto + LF (Unix)
 * text=auto eol=lf
 
 # Scripts Windows (si présents)
@@ -98,11 +102,11 @@ snippets/**         linguist-detectable=false
 # 3) Règles de diff / merge utiles     #
 ########################################
 
-# Changelogs : fusion safe
-CHANGELOG   merge=union
-CHANGELOG.* merge=union
+# Changelogs : fusion "union" (garde les deux côtés dans les conflits)
+CHANGELOG    merge=union
+CHANGELOG.*  merge=union
 
-# Lockfiles (option “ours” — décommente si tu l’assumes)
+# Lockfiles — option "ours" (si tu assumes de toujours garder ta version)
 # package-lock.json  merge=ours -diff
 # pnpm-lock.yaml     merge=ours -diff
 # yarn.lock          merge=ours -diff
@@ -110,61 +114,54 @@ CHANGELOG.* merge=union
 # Pipfile.lock       merge=ours -diff
 # composer.lock      merge=ours -diff
 
-# Markdown / textes : diff mot-à-mot
-*.md  diff=word
-*.rst diff=word
-*.adoc diff=word
-*.txt diff=word
-
-# JSON : si diff json dispo, sinon commente
-# *.json diff=json
-
 # Artefacts générés : pas de diff
 generated/** -diff
 dist/**      -diff
 build/**     -diff
 target/**    -diff
 
-# Submodules : vue compacte
-**/.gitmodules text
-**/*/         submodule
+# Textes : laisse Git gérer (tu peux activer --word-diff à la demande en CLI)
+*.md   text
+*.rst  text
+*.adoc text
+*.txt  text
 
 ########################################
 # 4) Export des archives (git archive) #
 ########################################
 # Exclure les méta-fichiers de l’archive
-.gitignore        export-ignore
-.gitattributes    export-ignore
-.github/**        export-ignore
-.gitea/**         export-ignore
-.gitlab/**        export-ignore
-.vscode/**        export-ignore
-.idea/**          export-ignore
-.editorconfig     export-ignore
-.prettier*        export-ignore
-.eslintrc*        export-ignore
-.stylelintrc*     export-ignore
-.npmrc            export-ignore
-.yarnrc*          export-ignore
-pnpm-workspace.yaml export-ignore
+.gitignore             export-ignore
+.gitattributes         export-ignore
+.github/**             export-ignore
+.gitea/**              export-ignore
+.gitlab/**             export-ignore
+.vscode/**             export-ignore
+.idea/**               export-ignore
+.editorconfig          export-ignore
+.prettier*             export-ignore
+.eslintrc*             export-ignore
+.stylelintrc*          export-ignore
+.npmrc                 export-ignore
+.yarnrc*               export-ignore
+pnpm-workspace.yaml    export-ignore
 
 # CI/CD
-.ci/**              export-ignore
-.github/workflows/** export-ignore
-.gitlab-ci.yml      export-ignore
-.circleci/**        export-ignore
-azure-pipelines.yml export-ignore
-Jenkinsfile         export-ignore
+.ci/**                 export-ignore
+.github/workflows/**   export-ignore
+.gitlab-ci.yml         export-ignore
+.circleci/**           export-ignore
+azure-pipelines.yml    export-ignore
+Jenkinsfile            export-ignore
 
 # Build/générés
-build/**          export-ignore
-dist/**           export-ignore
-target/**         export-ignore
-generated/**      export-ignore
-coverage/**       export-ignore
+build/**               export-ignore
+dist/**                export-ignore
+target/**              export-ignore
+generated/**           export-ignore
+coverage/**            export-ignore
 
 # Docs sources (si tu publies ailleurs)
-docs/**           export-ignore
+docs/**                export-ignore
 
 ########################################
 # 5) Spécifiques Vitte                 #
@@ -189,7 +186,7 @@ scaffold/**   linguist-detectable=false
 ########################################
 # 7) Divers                            #
 ########################################
-*.svg text
+*.svg    text
 Makefile text eol=lf
 *.sh     text eol=lf
 *.csv    text eol=lf
