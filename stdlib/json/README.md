@@ -1,3 +1,0 @@
-# json
-
-API étendue + exemples.

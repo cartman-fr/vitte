@@ -1,7 +1,0 @@
-# v7: free functions + lambda captures
-double = (x) -> x * 2
-print(double(3))  # 6
-
-y = 10
-addY = (x) -> x + y
-print(addY(5))    # 15

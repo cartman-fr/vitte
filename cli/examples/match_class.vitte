@@ -1,9 +1,0 @@
-# EXPECT: user
-# EXPECT: other
-class User { }
-class Dog { }
-let = (x)->x
-x = new User {}
-y = new Dog {}
-match x { User -> print("user"), _ -> print("other") }
-match y { User -> print("user"), _ -> print("other") }

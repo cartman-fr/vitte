@@ -1,8 +1,0 @@
-[package]
-name = "vitte-resolver"
-version = "0.4.0"
-edition = "2021"
-[dependencies]
-vitte-ast = { path = "../vitte-ast" }
-[lib]
-path = "src/lib.rs"

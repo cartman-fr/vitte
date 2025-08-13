@@ -1,3 +1,0 @@
-# async
-
-API étendue + exemples.

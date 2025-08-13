@@ -1,4 +1,0 @@
-export: Foo, make
-class Foo { x: 1 }
-make = ( ) -> 42
-hidden = 99

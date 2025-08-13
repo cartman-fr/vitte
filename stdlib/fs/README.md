@@ -1,3 +1,0 @@
-# fs
-
-API étendue + exemples.

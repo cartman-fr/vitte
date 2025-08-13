@@ -1,3 +1,0 @@
-# io
-
-API étendue + exemples.

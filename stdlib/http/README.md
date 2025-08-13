@@ -1,3 +1,0 @@
-# http
-
-API étendue + exemples.

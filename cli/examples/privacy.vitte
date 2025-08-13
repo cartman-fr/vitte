@@ -1,5 +1,0 @@
-# EXPECT: 7
-class Secret { _token: 7 get(self) -> _token }
-s = new Secret {}
-print(s.get())
-# s._token  # devrait échouer si on l'évalue

@@ -1,8 +1,0 @@
-# Bytecode v4: compile class, new, call method (self-only)
-class User {
-  name: "Ada"
-  greet(self) -> print("Hello " + self.name)
-  init(self) -> print(self.name)
-}
-u = new User {}
-u.greet()

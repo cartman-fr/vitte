@@ -1,5 +1,0 @@
-# EXPECT: 5
-class Math {
-  static add(a,b) -> a + b
-}
-print(Math.add(2,3))

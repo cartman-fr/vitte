@@ -1,8 +1,0 @@
-[package]
-name = "vitte-hir"
-version = "0.5.0"
-edition = "2021"
-[dependencies]
-vitte-ast = { path = "../vitte-ast" }
-[lib]
-path = "src/lib.rs"

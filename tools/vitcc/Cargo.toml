@@ -1,4 +1,7 @@
 [package]
-name="vitcc"
-version="0.1.0"
-edition="2021"
+name = "vitcc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vitte-vm = { path = "../../vitte-vm", features = ["zstd"] } # retire "zstd" si tu n’en veux pas

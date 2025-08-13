@@ -1,9 +1,0 @@
-[package]
-name = "vittec"
-version = "0.5.0"
-edition = "2021"
-[dependencies]
-vitte-compiler = { path = "../vitte-compiler" }
-[bin]
-name = "vittec"
-path = "src/main.rs"

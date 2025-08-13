@@ -1,24 +1,116 @@
+name: Release
 
-name: release
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "v*.*.*"   # ex: v0.1.0
+  workflow_dispatch:
+
+env:
+  BIN_NAME: vitte
+
 jobs:
-  build-release:
-    strategy:
-      matrix: { os: [ubuntu-latest, macos-latest, windows-latest] }
+  build:
+    name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu }
+          - { os: macos-13,      target: x86_64-apple-darwin }
+          - { os: macos-14,      target: aarch64-apple-darwin }
+          - { os: windows-latest,target: x86_64-pc-windows-msvc }
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build toolchain
-        run: cargo build --workspace --release
-      - name: Package .vitx
-        run: echo "vitpack (placeholder)"
-      - name: Sign
-        run: echo "vitsign (placeholder)"
-      - name: Upload
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (release)
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Prepare dist layout
+        shell: bash
+        run: |
+          set -eux
+          TGT="${{ matrix.target }}"
+          OUT="dist/${TGT}"
+          mkdir -p "$OUT/completions"
+          if [[ "$TGT" == *"windows"* ]]; then
+            cp "target/${TGT}/release/${BIN_NAME}.exe" "$OUT/"
+            EXE="$OUT/${BIN_NAME}.exe"
+          else
+            cp "target/${TGT}/release/${BIN_NAME}" "$OUT/"
+            # strip si dispo (meilleure taille)
+            command -v strip >/dev/null && strip "$OUT/${BIN_NAME}" || true
+            EXE="$OUT/${BIN_NAME}"
+          fi
+
+          # Génère toutes les complétions via le binaire
+          "$EXE" completions --shell bash       > "$OUT/completions/${BIN_NAME}.bash"
+          "$EXE" completions --shell zsh        > "$OUT/completions/_${BIN_NAME}"
+          "$EXE" completions --shell fish       > "$OUT/completions/${BIN_NAME}.fish"
+          "$EXE" completions --shell powershell > "$OUT/completions/${BIN_NAME}.ps1"
+          "$EXE" completions --shell elvish     > "$OUT/completions/${BIN_NAME}.elv"
+          "$EXE" completions --shell nushell    > "$OUT/completions/${BIN_NAME}.nu"
+
+          # Checksums (sha256) pour binaire + complétions + archive
+          if [[ "$TGT" == *"windows"* ]]; then
+            shasum -a 256 "$OUT/${BIN_NAME}.exe" > "$OUT/SHA256SUMS" || certutil -hashfile "$OUT/${BIN_NAME}.exe" SHA256 > "$OUT/SHA256SUMS"
+          else
+            shasum -a 256 "$OUT/${BIN_NAME}" > "$OUT/SHA256SUMS"
+          fi
+          find "$OUT/completions" -type f -print0 | xargs -0 shasum -a 256 >> "$OUT/SHA256SUMS" || true
+
+          # Archive par cible
+          (cd dist && tar -czf "${TGT}.tar.gz" "${TGT}")
+          echo "ARCHIVE=dist/${TGT}.tar.gz" >> $GITHUB_ENV
+
+      - name: Upload artifact (archive)
         uses: actions/upload-artifact@v4
         with:
-          name: vitte-binaries-${{ matrix.os }}
-          path: target/**/*
+          name: ${{ matrix.target }}
+          path: ${{ env.ARCHIVE }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Collect assets list
+        id: collect
+        shell: bash
+        run: |
+          set -eux
+          # Lister archives
+          echo "files=$(ls dist/**/*.tar.gz | tr '\n' ',' )" >> $GITHUB_OUTPUT
+          # Lister scripts de complétions (toutes cibles)
+          echo "comps=$(ls dist/**/completions/* | tr '\n' ',' )" >> $GITHUB_OUTPUT
+          # Lister checksums
+          echo "sums=$(ls dist/**/SHA256SUMS | tr '\n' ',' )" >> $GITHUB_OUTPUT
+
+      - name: Create/Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.collect.outputs.files }}
+            ${{ steps.collect.outputs.comps }}
+            ${{ steps.collect.outputs.sums }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

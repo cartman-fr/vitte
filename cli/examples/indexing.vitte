@@ -1,6 +1,0 @@
-# EXPECT: 3
-# EXPECT: o
-xs = [1,2,3,4]
-print(xs[2])
-s = "hello"
-print(s[4])

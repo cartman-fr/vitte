@@ -1,8 +1,6 @@
 [package]
 name = "vitte-vm"
-version = "0.4.0"
+version = "0.1.0"
 edition = "2021"
+
 [dependencies]
-vitte-bytecode = { path = "../vitte-bytecode" }
-[lib]
-path = "src/lib.rs"

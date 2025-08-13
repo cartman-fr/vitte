@@ -1,8 +1,0 @@
-# EXPECT: 2
-class Counter {
-  static count: 0
-  init(self) -> Counter.count = Counter.count + 1
-}
-a = new Counter {}
-b = new Counter {}
-print(Counter.count)

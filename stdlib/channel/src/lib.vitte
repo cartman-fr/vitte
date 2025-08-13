@@ -1,6 +1,0 @@
-# channel — API étendue
-struct Sender[T] {}
-struct Receiver[T] {}
-fn channel[T](cap:usize=0) -> (Sender[T], Receiver[T]) { return (Sender[T]{}, Receiver[T]{}) }
-fn send[T](s:Sender[T], v:T) -> bool { return true }
-fn recv[T](r:Receiver[T]) -> Option[T] { return None }

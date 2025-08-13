@@ -1,4 +1,0 @@
-# async — API étendue
-async fn sleep(ms:u64) {}
-fn spawn_task(f: async fn()) -> i32 { return 0 }
-await fn join_task(id:i32) {}

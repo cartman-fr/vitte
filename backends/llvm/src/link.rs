@@ -1,1 +1,0 @@
-pub fn select_linker(_triple: &str) -> &'static str { "cc" }

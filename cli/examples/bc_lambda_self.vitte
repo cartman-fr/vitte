@@ -1,8 +1,0 @@
-# v7: lambda capture `self` inside a method
-class Box {
-  v: 1
-  maker(self) -> (x) -> self.v + x
-}
-b = new Box {}
-f = b.maker()
-print(f(4))  # 5

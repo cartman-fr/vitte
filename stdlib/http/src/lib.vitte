@@ -1,6 +1,0 @@
-# http — API étendue
-struct Request { method:string, path:string, headers:Map[string,string], body:bytes }
-struct Response { status:i32, headers:Map[string,string], body:bytes }
-fn get(url:string) -> Result[Response, NetErr] { return Err(NetErr::Conn) }
-fn serve(addr:string, handler: fn(Request)->Response) -> Result[(), NetErr] { return Ok(()) }
-fn ok_json(s:string) -> Response { return Response{ status:200, headers:{"content-type":"application/json"}, body: s.bytes() } }

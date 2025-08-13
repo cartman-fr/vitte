@@ -1,3 +1,0 @@
-# EXPECT: true
-from exports: make
-print(make() == 42)

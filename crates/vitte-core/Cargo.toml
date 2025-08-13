@@ -1,0 +1,34 @@
+# /tests/Cargo.toml
+[package]
+name = "vitte-vm-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# On exécute le fichier placé à la racine de /tests : integration.rs
+[[test]]
+name = "integration"
+path = "integration.rs"
+
+[features]
+# Active ici pour propager vers vitte-vm si tu veux tester la compression
+zstd = ["vitte-vm/zstd"]
+default = [] # pas de compression par défaut pour des tests plus rapides
+
+[dev-dependencies]
+# Pointe sur le crate local vitte-vm (même workspace)
+vitte-vm = { path = "../vitte-vm", default-features = true }
+
+[profile.dev]
+opt-level = 1
+debug = 1
+incremental = true
+
+[profile.test]
+opt-level = 1
+debug = 2
+incremental = true
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

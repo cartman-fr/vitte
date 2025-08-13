@@ -1,7 +1,0 @@
-# net/tcp — API étendue
-struct TcpStream {}
-struct TcpListener {}
-fn connect(addr:string) -> Result[TcpStream, NetErr] { return Err(NetErr::Conn) }
-fn listen(addr:string) -> Result[TcpListener, NetErr] { return Err(NetErr::Bind) }
-fn accept(l:TcpListener) -> Result[TcpStream, NetErr] { return Err(NetErr::Accept) }
-fn set_nodelay(s:TcpStream, on:bool) {}

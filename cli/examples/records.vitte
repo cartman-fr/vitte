@@ -1,5 +1,0 @@
-# EXPECT: {id: 42, name: Ada}
-# EXPECT: Ada
-user = {name: "Ada", id: 42}
-print(user)
-print(user.name)

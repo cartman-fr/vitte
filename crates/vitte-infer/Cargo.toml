@@ -1,9 +1,0 @@
-[package]
-name = "vitte-infer"
-version = "0.4.0"
-edition = "2021"
-[dependencies]
-vitte-ast = { path = "../vitte-ast" }
-vitte-ty  = { path = "../vitte-ty" }
-[lib]
-path = "src/lib.rs"

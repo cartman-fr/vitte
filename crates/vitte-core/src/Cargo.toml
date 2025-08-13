@@ -1,0 +1,13 @@
+[features]
+default = ["std"]
+std = []
+alloc-only = []
+serde = ["dep:serde"]
+tracing = ["dep:tracing"]
+eval = [] # ton mini runtime
+
+[dependencies]
+bincode = "1"
+thiserror = { version = "1", optional = false } # requis si std
+serde = { version = "1", features = ["derive"], optional = true }
+tracing = { version = "0.1", optional = true }
