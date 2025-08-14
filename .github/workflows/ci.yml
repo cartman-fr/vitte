@@ -3,15 +3,17 @@ name: CI
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ "**" ]
+  pull_request: {}   # toutes les branches/PR
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
+  RUSTFLAGS: -D warnings
 
 jobs:
-  # ⚡ Feedback en <1min : format + clippy (Linux stable)
+  # ⚡ Feedback rapide : format + clippy (Linux stable)
   lint:
     name: Lint (fmt + clippy)
     runs-on: ubuntu-latest
@@ -30,15 +32,15 @@ jobs:
       - name: clippy (deny warnings)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-  # 🧪 Build & tests sur une matrice d’OS/targets + features
+  # 🧪 Build & tests multi-OS + variations de features
   test:
     name: Test (${{ matrix.os }} • ${{ matrix.toolchain }} • f=${{ matrix.features }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-latest]
-        toolchain: [stable]
+        os: [ ubuntu-latest, macos-14, windows-latest ]
+        toolchain: [ stable ]
         features: [ "", "checksum", "compress", "checksum,compress" ]
     steps:
       - uses: actions/checkout@v4
@@ -51,15 +53,26 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Compute feature args
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.features }}" ]; then
+            echo 'FEATURES=--features "${{ matrix.features }}"' >> "$GITHUB_ENV"
+          else
+            echo 'FEATURES=' >> "$GITHUB_ENV"
+          fi
+
       - name: Build (release)
-        run: cargo build --locked --no-default-features ${{ fromJSON(matrix.features != '' && format('--features "{0}"', matrix.features) || '') }}
+        shell: bash   # pour que $FEATURES marche aussi sur Windows
+        run: cargo build --release --locked --no-default-features $FEATURES
 
       - name: Test
-        run: cargo test --all --locked --no-default-features ${{ fromJSON(matrix.features != '' && format('--features "{0}"', matrix.features) || '') }}
+        shell: bash
+        run: cargo test --all --locked --no-default-features $FEATURES
 
-  # ⛓️ MSRV : la version minimale supportée (à fixer selon ton projet)
+  # ⛓️ MSRV : aligne avec ton workspace (1.80.0)
   msrv:
-    name: MSRV (1.74.0)
+    name: MSRV (1.80.0)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +80,7 @@ jobs:
       - name: Install Rust (MSRV)
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.74.0
+          toolchain: 1.80.0
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -76,26 +89,26 @@ jobs:
         run: cargo build --locked --no-default-features
 
       - name: Test (no default features)
-        run: cargo test  --locked --no-default-features
+        run: cargo test --locked --no-default-features
 
-  # 🧹 Verifs supplémentaires (doc + examples) sur Linux
+  # 🧹 Vérifs supplémentaires (doc + examples) sur Linux
   extras:
     name: Extras (doc, examples)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Doc build (no-deps)
-        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
+      - name: Doc build (no-deps, deny warnings)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps
 
-      - name: Examples build (si présents)
-        run: |
-          if cargo run --example 2>/dev/null; then
-            echo "examples OK"
-          else
-            echo "no examples or run failed (non-blocking)"; exit 0
-          fi
+      - name: Build examples (non-blocking)
+        shell: bash
+        run: cargo build --examples || true
