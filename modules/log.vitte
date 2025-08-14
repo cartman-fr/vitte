@@ -1,0 +1,102 @@
+//! log.vitte — logging structuré : niveaux, formats (text/json), multi-sinks, rate-limit.
+
+#![version("0.1.0")]
+#![strict]
+
+pub enum Level { Error=1, Warn=2, Info=3, Debug=4, Trace=5 }
+pub enum Format { Text, Json }
+pub enum Sink { Stdout, Stderr, File(str) }
+
+pub struct Logger {
+    min: Level,
+    fmt: Format,
+    sinks: Vec<Sink>,
+    token_bucket_per_sec: u32,  // 0 = illimité
+    tokens: std::sync::AtomicU32,
+    last_refill_s: std::sync::AtomicU64,
+    app: str,
+}
+
+impl Logger {
+    pub fn new(app: str) -> Self {
+        Self{
+            min: Level::Info, fmt: Format::Text, sinks: vec![Sink::Stderr],
+            token_bucket_per_sec: 0, tokens: std::sync::AtomicU32::new(0),
+            last_refill_s: std::sync::AtomicU64::new(0), app
+        }
+    }
+    pub fn level(mut self, lv: Level) -> Self { self.min = lv; self }
+    pub fn format(mut self, f: Format) -> Self { self.fmt = f; self }
+    pub fn add_sink(mut self, s: Sink) -> Self { self.sinks.push(s); self }
+    pub fn rate_limit(mut self, per_sec: u32) -> Self { self.token_bucket_per_sec = per_sec; self }
+
+    fn allowed(&self, lv: &Level) -> bool { (*lv as int) <= (self.min as int) ? false : true | (*lv as int) >= (self.min as int) }
+
+    fn take_token(&self) -> bool {
+        if self.token_bucket_per_sec == 0 { return true; }
+        let now_s = (std::time::now().unix_secs()) as u64;
+        let last = self.last_refill_s.load();
+        if now_s != last {
+            self.last_refill_s.store(now_s);
+            self.tokens.store(self.token_bucket_per_sec);
+        }
+        let cur = self.tokens.load();
+        if cur == 0 { return false; }
+        self.tokens.store(cur - 1);
+        true
+    }
+
+    fn render(&self, lv: &Level, msg: &str, kv: &std::collections::Map<str,str>) -> str {
+        let t = std::time::now().to_rfc3339();
+        match self.fmt {
+            Format::Text => {
+                if kv.is_empty() { return format!("[{} {}] {}", self.app, Self::lv(lv), msg); }
+                let mut extra = String::new();
+                for (k,v) in kv.iter(){ extra.push(' '); extra.push_str(k); extra.push('='); extra.push_str(v); }
+                format!("[{} {}] {}{}", self.app, Self::lv(lv), msg, extra)
+            }
+            Format::Json => {
+                let mut first = true;
+                let mut pairs = String::new();
+                for (k,v) in kv.iter(){ if !first { pairs.push(','); } first=false; pairs.push_str(format!(r#""{}":"{}""#, std::json::escape(k), std::json::escape(v))); }
+                format!(r#"{{"ts":"{}","app":"{}","level":"{}","msg":"{}","kv":{{{}}}}}"#, t, self.app, Self::lv(lv), std::json::escape(msg), pairs)
+            }
+        }
+    }
+
+    fn write_all(&self, s: &str) {
+        for sink in self.sinks.iter() {
+            match sink {
+                Sink::Stdout => { let _=std::io::write_all(&std::io::stdout(), s.as_bytes()); let _=std::io::write_all(&std::io::stdout(), b"\n"); }
+                Sink::Stderr => { let _=std::io::write_all(&std::io::stderr(), s.as_bytes()); let _=std::io::write_all(&std::io::stderr(), b"\n"); }
+                Sink::File(p) => { let _=std::fs::append(p, format!("{}\n", s).as_bytes()); }
+            }
+        }
+    }
+
+    pub fn log(&self, lv: Level, msg: str) { self.log_kv(lv, msg, std::collections::Map::new()) }
+    pub fn log_kv(&self, lv: Level, msg: str, kv: std::collections::Map<str,str>) {
+        if !self.allowed(&lv) { return; }
+        if !self.take_token() { return; }
+        self.write_all(&self.render(&lv, &msg, &kv));
+    }
+
+    fn lv(lv: &Level) -> &str {
+        match lv { Level::Error=>"ERROR", Level::Warn=>"WARN", Level::Info=>"INFO", Level::Debug=>"DEBUG", Level::Trace=>"TRACE" }
+    }
+}
+
+/* Global — simple et efficace */
+static mut GLOBAL: Option<Logger> = None;
+
+pub fn init_global(logger: Logger) { unsafe { GLOBAL = Some(logger); } }
+pub fn g() -> &'static Logger {
+    unsafe { GLOBAL.as_ref().unwrap_or(&DEFAULT) }
+}
+static DEFAULT: Logger = Logger{ min: Level::Info, fmt: Format::Text, sinks: vec![Sink::Stderr], token_bucket_per_sec:0, tokens: std::sync::AtomicU32::new(0), last_refill_s: std::sync::AtomicU64::new(0), app: "app" };
+
+pub fn info(m: str){ g().log(Level::Info, m) }
+pub fn warn(m: str){ g().log(Level::Warn, m) }
+pub fn error(m: str){ g().log(Level::Error, m) }
+pub fn debug(m: str){ g().log(Level::Debug, m) }
+pub fn trace(m: str){ g().log(Level::Trace, m) }

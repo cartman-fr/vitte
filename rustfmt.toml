@@ -1,0 +1,58 @@
+# .rustfmt.toml — Style maison : net, cohérent, CI-friendly
+# 👉 100 colonnes, imports rangés, commentaires wrap, et commas traînantes (diffs propres)
+
+# ——— Base ———
+edition = "2021"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Max"   # place le plus possible sur une ligne (sans casser la lisibilité)
+
+# ——— Imports & modules ———
+reorder_imports = true
+imports_granularity = "Crate"      # "Module" si tu veux regrouper par module, "Item" pour le plus fin
+group_imports = "StdExternalCrate" # std | extern | crate/local
+reorder_modules = true
+
+# ——— Commentaires & docs ———
+wrap_comments = true
+comment_width = 100
+format_code_in_doc_comments = true
+normalize_doc_attributes = true
+
+# ——— Macros ———
+format_macro_bodies = true
+format_macro_matchers = true
+
+# ——— Virgules, pipes & opérateurs ———
+trailing_comma = "Vertical"      # moins de diffs quand on ajoute des éléments
+match_block_trailing_comma = true
+match_arm_leading_pipes = "Always"
+binop_separator = "Front"        # opérateurs en début de ligne sur les expressions longues
+
+# ——— Blancs ———
+blank_lines_upper_bound = 2
+blank_lines_lower_bound = 0
+
+# ——— Littéraux & espaces ———
+hex_literal_case = "Lower"
+spaces_around_ranges = false
+
+# ——— Alignements (garder sobre) ———
+struct_field_align_threshold = 0
+enum_discrim_align_threshold = 0
+
+# ——— Largeurs fines (aide rustfmt pour les découpes) ———
+array_width = 80
+attr_fn_like_width = 70
+chain_width = 80
+fn_call_width = 80
+single_line_if_else_max_width = 50
+single_line_let_else_max_width = 50
+struct_lit_width = 40
+struct_variant_width = 40
+
+# ——— Choix assumés ———
+# On évite d'aplatir de force : lisibilité > “tout sur une ligne”
+fn_single_line = false

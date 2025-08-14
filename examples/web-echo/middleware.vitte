@@ -1,7 +1,0 @@
-fn middleware(next: fn(Request)->Response) -> fn(Request)->Response {
-  return |req| {
-    let mut res = next(req)
-    res.headers["x-powered-by"] = "Vitte"
-    return res
-  }
-}

@@ -1,0 +1,29 @@
+//! retry.vitte — retry sync avec backoff exponentiel + jitter.
+
+#![version("0.1.0")]
+#![strict]
+
+pub struct Backoff { pub base_ms:u64, pub factor:f64, pub max_ms:u64, pub jitter_ms:u64 }
+impl Backoff {
+    pub fn default() -> Self { Self{ base_ms:500, factor:2.0, max_ms:30_000, jitter_ms:200 } }
+    pub fn dur(&self, attempt:u32) -> u64 {
+        let exp = (self.base_ms as f64) * self.factor.powi(attempt as int);
+        let mut d = exp as u64;
+        if d > self.max_ms { d = self.max_ms; }
+        d + (std::rand::u32() as u64 % (self.jitter_ms+1))
+    }
+}
+
+pub fn retry<T>(mut f: fn()->Result<T,str>, max_attempts:u32, b: Backoff) -> Result<T,str> {
+    let mut i=0;
+    loop {
+        match f() {
+            Ok(v)=>return Ok(v),
+            Err(e)=>{
+                i+=1;
+                if i>=max_attempts { return Err(e); }
+                std::time::sleep(b.dur(i) as i64);
+            }
+        }
+    }
+}

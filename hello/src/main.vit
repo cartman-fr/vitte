@@ -1,0 +1,30 @@
+#![version("0.1.0")]
+#![strict]
+#![warn("unsafe_ops", "unused")]
+
+use std::env;
+
+// ———————————————————————————————————————
+// Point d’entrée principal
+// ———————————————————————————————————————
+fn main(args: [str]) -> int {
+    println("Hello, world! — depuis Vitte 🐉");
+
+    // Exemple: affichage des arguments
+    if args.len() > 1 {
+        println("Arguments reçus:");
+        for i, arg in args.iter().enumerate() {
+            println("  {i}: {arg}");
+        }
+    } else {
+        println("Aucun argument fourni.");
+    }
+
+    // Exemple: lecture d'une variable d'environnement
+    match env::get("USER") {
+        Some(user) => println("Utilisateur: {user}"),
+        None => println("Utilisateur: (inconnu)"),
+    }
+
+    return 0; // succès
+}

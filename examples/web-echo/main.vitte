@@ -1,7 +1,0 @@
-use http, json, log
-fn main(){
-  log::set_level(log::Level::Info)
-  http::serve("0.0.0.0:8080", |req| {
-    return http::ok_json(json::encode({"ok":true,"path":req.path}))
-  })
-}

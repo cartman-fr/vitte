@@ -1,0 +1,512 @@
+double = (x)->x*2
+trip = (x)->x*3
+//! util.vitte — Boîte à outils standard (autonome)
+//!
+//! Modules fournis :
+//! - log        : logger simple (stderr), niveaux & timestamps
+//! - time       : now(), unix_ms(), sleep(ms), chrono
+//! - path       : join(), normalize(), split_ext(), dirname(), basename()
+//! - fs         : read/write/append, exists, is_file/dir, mkdirp, copy/move, rm_rf, tempdir
+//! - env        : get/set/has, get_bool(), get_u32()
+//! - args       : ArgParser (flags, options, rest), usage()
+//! - proc       : run(cmd, args[], env?), capture (stdout/stderr, code)
+//! - hash       : fnv1a32/64, crc32
+//! - enc        : hex_encode/decode, b64_encode/decode
+//! - text       : trim/split/lines, starts/ends/contains, replace_all, to_lower/upper
+//! - ds         : RingBuffer<T>, LRU<K,V>
+//!
+//! Tout est `std`-friendly pour cible hôte ; en `no_std`/embedded, ne compile que ce qui est dispo (garde les signatures).
+
+#![version("0.1.0")]
+#![strict]
+#![warn("unsafe_ops","unused","dead_code")]
+
+//////////////////////////////
+// log — mini logger
+//////////////////////////////
+pub mod log {
+    pub enum Level { Error, Warn, Info, Debug, Trace }
+
+    fn lv_from_env() -> Level {
+        let s = std::env::get("LOG").unwrap_or("info").to_lower();
+        match s.as_str() {
+            "error" => Level::Error,
+            "warn"  => Level::Warn,
+            "info"  => Level::Info,
+            "debug" => Level::Debug,
+            "trace" => Level::Trace,
+            _       => Level::Info,
+        }
+    }
+
+    static mut GLOBAL: Level = Level::Info;
+
+    pub fn init() {
+        unsafe { GLOBAL = lv_from_env(); }
+    }
+
+    fn enabled(l: Level) -> bool {
+        let cur = unsafe { &GLOBAL };
+        match (cur, &l) {
+            (Level::Error, Level::Error) => true,
+            (Level::Warn , Level::Error | Level::Warn) => true,
+            (Level::Info , Level::Error | Level::Warn | Level::Info) => true,
+            (Level::Debug, Level::Error | Level::Warn | Level::Info | Level::Debug) => true,
+            (Level::Trace, _) => true,
+            _ => false,
+        }
+    }
+
+    fn ts() -> str { std::time::now().to_rfc3339() }
+
+    pub fn error(m: str){ if enabled(Level::Error){ eprintln("[ERROR {}] {}", ts(), m) } }
+    pub fn warn (m: str){ if enabled(Level::Warn ){ eprintln("[WARN  {}] {}", ts(), m) } }
+    pub fn info (m: str){ if enabled(Level::Info ){ println ("[INFO  {}] {}", ts(), m) } }
+    pub fn debug(m: str){ if enabled(Level::Debug){ eprintln("[DEBUG {}] {}", ts(), m) } }
+    pub fn trace(m: str){ if enabled(Level::Trace){ eprintln("[TRACE {}] {}", ts(), m) } }
+}
+
+//////////////////////////////
+// time — horloge & chrono
+//////////////////////////////
+pub mod time {
+    pub fn now() -> std::time::Instant { std::time::now() }
+    pub fn unix_ms() -> u128 { std::time::now().unix_millis() as u128 }
+    pub fn sleep(ms: u32) { std::time::sleep(ms as i64) }
+
+    pub struct Chrono { start: std::time::Instant }
+    impl Chrono {
+        pub fn start() -> Self { Self{ start: now() } }
+        pub fn reset(&mut self) { self.start = now(); }
+        pub fn ms(&self) -> u128 { (now() - self.start).as_millis() as u128 }
+        pub fn sec_f(&self) -> f64 { (self.ms() as f64) / 1000.0 }
+    }
+}
+
+//////////////////////////////
+// path — chemins
+//////////////////////////////
+pub mod path {
+    pub const SEP: char = std::path::SEP;
+
+    pub fn join(a: str, b: str) -> str {
+        if a.is_empty() { return b.to_string(); }
+        if b.is_empty() { return a.to_string(); }
+        if a.ends_with(SEP) { return format!("{}{}", a, b) }
+        return format!("{}{}{}", a, SEP, b)
+    }
+
+    pub fn normalize(p: str) -> str {
+        let mut parts = Vec<str>::new();
+        for seg in p.split(['/', '\\']) {
+            if seg.is_empty() || seg == "." { continue; }
+            if seg == ".." { if !parts.is_empty(){ parts.pop(); } continue; }
+            parts.push(seg.to_string());
+        }
+        let mut out = if is_abs(p) { String::from(std::path::ROOT) } else { String::new() };
+        let mut i=0;
+        while i<parts.len() {
+            if !out.is_empty() && !out.ends_with(SEP){ out.push(SEP); }
+            out.push_str(parts[i]);
+            i+=1;
+        }
+        if out.is_empty() { return ".".into(); }
+        out
+    }
+
+    pub fn is_abs(p: str) -> bool { std::path::is_absolute(p) }
+    pub fn dirname(p: str) -> str { std::path::parent(p).unwrap_or(".").to_string() }
+    pub fn basename(p: str) -> str { std::path::file_name(p).unwrap_or("").to_string() }
+
+    pub fn split_ext(p: str) -> (str, str) {
+        let name = basename(p);
+        match name.rfind('.') {
+            None => (p.to_string(), "".into()),
+            Some(ix) => {
+                let stem = &p[..p.len()- (name.len()-ix)];
+                let ext  = &name[ix+1..];
+                (stem.to_string(), ext.to_string())
+            }
+        }
+    }
+}
+
+//////////////////////////////
+// fs — fichiers & dirs
+//////////////////////////////
+pub mod fs {
+    use super::path;
+
+    pub fn exists(p: str) -> bool { std::fs::exists(p) }
+    pub fn is_file(p: str) -> bool { std::fs::is_file(p) }
+    pub fn is_dir(p: str) -> bool { std::fs::is_dir(p) }
+
+    pub fn read_to_string(p: str) -> Result<str, str> {
+        std::fs::read_to_string(p).map_err(|e| format!("{}", e))
+    }
+    pub fn write_string(p: str, s: str) -> Result<(), str> {
+        std::fs::write(p, s.as_bytes()).map_err(|e| format!("{}", e))
+    }
+    pub fn append_string(p: str, s: str) -> Result<(), str> {
+        std::fs::append(p, s.as_bytes()).map_err(|e| format!("{}", e))
+    }
+
+    pub fn mkdirp(p: str) -> Result<(), str> { std::fs::create_dir_all(p).map_err(|e| format!("{}", e)) }
+    pub fn rm_rf(p: str) -> Result<(), str> { std::fs::remove_all(p).map_err(|e| format!("{}", e)) }
+    pub fn copy(a: str, b: str) -> Result<(), str> { std::fs::copy(a, b).map(|_| ()).map_err(|e| format!("{}", e)) }
+    pub fn mv(a: str, b: str) -> Result<(), str> { std::fs::rename(a, b).map_err(|e| format!("{}", e)) }
+
+    pub fn tempdir(prefix: str) -> Result<str, str> {
+        let base = std::env::get("TMPDIR").unwrap_or(std::path::tmp_dir());
+        let ts = std::time::now().unix_millis();
+        let dir = path::join(base, format!("{}-{}", prefix, ts));
+        mkdirp(&dir)?;
+        Ok(dir)
+    }
+
+    pub fn list_dir(p: str) -> Result<Vec<str>, str> {
+        std::fs::read_dir(p).map(|entries| {
+            let mut v = Vec<str>::new();
+            for e in entries {
+                v.push(e.path);
+            }
+            v
+        }).map_err(|e| format!("{}", e))
+    }
+}
+
+//////////////////////////////
+// env — variables d'environnement
+//////////////////////////////
+pub mod env {
+    pub fn get(name: str) -> Option<str> { std::env::get(name) }
+    pub fn set(name: str, val: str) { std::env::set(name, val); }
+    pub fn has(name: str) -> bool { std::env::get(name).is_some() }
+
+    pub fn get_bool(name: str, def: bool) -> bool {
+        match get(name).map(|s| s.to_lower().trim().to_string()) {
+            Some(v) if v=="1"||v=="true"||v=="yes" => true,
+            Some(v) if v=="0"||v=="false"||v=="no" => false,
+            _ => def,
+        }
+    }
+    pub fn get_u32(name: str, def: u32) -> u32 {
+        get(name).map(|s| s.parse::<u32>().unwrap_or(def)).unwrap_or(def)
+    }
+}
+
+//////////////////////////////
+// args — parseur de ligne de commande
+//////////////////////////////
+pub mod args {
+    use super::text;
+
+    pub struct ArgParser {
+        pub prog: str,
+        pub flags: std::collections::Set<str>,
+        pub opts: std::collections::Map<str, str>,
+        pub rest: Vec<str>,
+    }
+
+    impl ArgParser {
+        pub fn parse(argv: [str]) -> Self {
+            let prog = if argv.len() > 0 { argv[0].to_string() } else { "app".into() };
+            let mut flags = std::collections::Set::new();
+            let mut opts  = std::collections::Map::new();
+            let mut rest  = Vec<str>::new();
+
+            let mut i = 1;
+            while i < argv.len() {
+                let a = argv[i];
+                if a == "--" {
+                    // tout le reste va dans rest
+                    let mut j = i+1;
+                    while j < argv.len() { rest.push(argv[j].to_string()); j+=1; }
+                    break;
+                }
+                if a.starts_with("--") {
+                    if let Some(eq) = a.find('=') {
+                        let k = &a[2..eq];
+                        let v = &a[eq+1..];
+                        opts.insert(k.to_string(), v.to_string());
+                    } else {
+                        flags.insert(a[2..].to_string());
+                    }
+                } else if a.starts_with('-') && a.len() > 1 {
+                    // flags courts groupés -abc ou -o val
+                    let short = &a[1..];
+                    if short.len() > 1 {
+                        // -abc → -a -b -c
+                        for ch in short.chars() { flags.insert(ch.to_string()); }
+                    } else {
+                        // -o value
+                        let key = short.to_string();
+                        if i+1 < argv.len() && !argv[i+1].starts_with('-') {
+                            opts.insert(key, argv[i+1].to_string());
+                            i += 1;
+                        } else {
+                            flags.insert(key);
+                        }
+                    }
+                } else {
+                    rest.push(a.to_string());
+                }
+                i += 1;
+            }
+            Self { prog, flags, opts, rest }
+        }
+
+        pub fn has(&self, k: str) -> bool {
+            self.flags.contains(k) || self.opts.contains_key(k)
+        }
+        pub fn flag(&self, k: str) -> bool { self.flags.contains(k) }
+        pub fn get(&self, k: str) -> Option<str> { self.opts.get(k).cloned() }
+        pub fn get_u32(&self, k: str, def: u32) -> u32 {
+            self.get(k).map(|s| s.parse::<u32>().unwrap_or(def)).unwrap_or(def)
+        }
+
+        pub fn usage(&self, synopsis: str, details: str) -> str {
+            let mut s = String::new();
+            s.push_str("Usage: "); s.push_str(synopsis); s.push('\n');
+            s.push_str(details); s
+        }
+    }
+}
+
+//////////////////////////////
+// proc — sous-processus (hôte)
+//////////////////////////////
+pub mod proc {
+    pub struct Output { pub code: int, pub stdout: str, pub stderr: str }
+
+    pub fn run(cmd: str, args: [str]) -> Result<int, str> {
+        std::process::spawn(cmd, args).map(|status| status.code).map_err(|e| format!("{}", e))
+    }
+
+    pub fn capture(cmd: str, args: [str]) -> Result<Output, str> {
+        std::process::capture(cmd, args).map(|out| Output{ code: out.code, stdout: out.stdout, stderr: out.stderr })
+            .map_err(|e| format!("{}", e))
+    }
+}
+
+//////////////////////////////
+// hash — FNV-1a & CRC32
+//////////////////////////////
+pub mod hash {
+    pub fn fnv1a32(bytes: &[u8]) -> u32 {
+        let mut h: u32 = 0x811C9DC5;
+        for b in bytes {
+            h ^= *b as u32;
+            h = h.wrapping_mul(0x01000193);
+        }
+        h
+    }
+    pub fn fnv1a64(bytes: &[u8]) -> u64 {
+        let mut h: u64 = 0xcbf29ce484222325;
+        for b in bytes {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x00000100000001B3);
+        }
+        h
+    }
+
+    // CRC32 (poly 0xEDB88320, tableless)
+    pub fn crc32(bytes: &[u8]) -> u32 {
+        let mut crc: u32 = 0xFFFF_FFFF;
+        for b in bytes {
+            let mut x = (crc ^ (*b as u32)) & 0xFF;
+            let mut i = 0;
+            while i < 8 {
+                let m = if (x & 1) != 0 { 0xEDB88320 } else { 0 };
+                x = (x >> 1) ^ m;
+                i += 1;
+            }
+            crc = (crc >> 8) ^ x;
+        }
+        !crc
+    }
+}
+
+//////////////////////////////
+// enc — hex & base64
+//////////////////////////////
+pub mod enc {
+    const HEX: [char;16] = ['0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'];
+
+    pub fn hex_encode(bytes: &[u8]) -> str {
+        let mut out = String::with_capacity(bytes.len()*2);
+        for b in bytes {
+            out.push(HEX[(b >> 4) as usize]);
+            out.push(HEX[(b & 0xF) as usize]);
+        }
+        out
+    }
+
+    pub fn hex_decode(s: str) -> Result<Vec<u8>, str> {
+        if s.len() % 2 != 0 { return Err("hex length must be even"); }
+        let mut v = Vec<u8>::new();
+        let mut i = 0;
+        while i < s.len() {
+            let hi = s[i..i+1].to_lower().chars().next().unwrap();
+            let lo = s[i+1..i+2].to_lower().chars().next().unwrap();
+            let a = hex_val(hi)?; let b = hex_val(lo)?;
+            v.push(((a<<4) | b) as u8);
+            i += 2;
+        }
+        Ok(v)
+    }
+    fn hex_val(c: char) -> Result<u8, str> {
+        match c {
+            '0'..='9' => Ok((c as u8) - b'0'),
+            'a'..='f' => Ok(10 + (c as u8 - b'a')),
+            'A'..='F' => Ok(10 + (c as u8 - b'A')),
+            _ => Err("invalid hex char"),
+        }
+    }
+
+    // base64 (RFC 4648) — encode seulement (decode minimal)
+    const B64: [char;64] = [
+        'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
+        'Q','R','S','T','U','V','W','X','Y','Z','a','b','c','d','e','f',
+        'g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v',
+        'w','x','y','z','0','1','2','3','4','5','6','7','8','9','+','/'
+    ];
+
+    pub fn b64_encode(bytes: &[u8]) -> str {
+        let mut out = String::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            let b0 = bytes[i] as u32;
+            let b1 = if i+1 < bytes.len() { bytes[i+1] as u32 } else { 0 };
+            let b2 = if i+2 < bytes.len() { bytes[i+2] as u32 } else { 0 };
+            let triple = (b0<<16) | (b1<<8) | b2;
+
+            out.push(B64[((triple >> 18) & 0x3F) as usize]);
+            out.push(B64[((triple >> 12) & 0x3F) as usize]);
+            if i+1 < bytes.len() { out.push(B64[((triple >> 6) & 0x3F) as usize]); } else { out.push('='); }
+            if i+2 < bytes.len() { out.push(B64[(triple & 0x3F) as usize]); } else { out.push('='); }
+
+            i += 3;
+        }
+        out
+    }
+}
+
+//////////////////////////////
+// text — helpers chaînes
+//////////////////////////////
+pub mod text {
+    pub fn trim(s: str) -> str { s.trim().to_string() }
+    pub fn to_lower(s: str) -> str { s.to_lower() }
+    pub fn to_upper(s: str) -> str { s.to_upper() }
+    pub fn starts_with(s: str, p: str) -> bool { s.starts_with(p) }
+    pub fn ends_with(s: str, p: str) -> bool { s.ends_with(p) }
+    pub fn contains(s: str, p: str) -> bool { s.contains(p) }
+
+    pub fn split_ws(s: str) -> Vec<str> {
+        let mut v = Vec<str>::new();
+        for part in s.split_whitespace() { v.push(part.to_string()); }
+        v
+    }
+    pub fn lines(s: str) -> Vec<str> {
+        let mut v = Vec<str>::new();
+        for line in s.split('\n') { v.push(line.to_string()); }
+        v
+    }
+    pub fn replace_all(s: str, from: str, to: str) -> str {
+        s.replace(from, to)
+    }
+}
+
+//////////////////////////////
+// ds — petites structures
+//////////////////////////////
+pub mod ds {
+    // RingBuffer<T> à capacité fixe
+    pub struct RingBuffer<T> {
+        buf: Vec<T>, head: usize, len: usize, cap: usize
+    }
+    impl<T: Clone + Default> RingBuffer<T> {
+        pub fn with_capacity(cap: usize) -> Self {
+            let mut v = Vec<T>::new();
+            v.resize(cap, T::default());
+            Self{ buf: v, head: 0, len: 0, cap }
+        }
+        pub fn push(&mut self, x: T) {
+            let idx = (self.head + self.len) % self.cap;
+            self.buf[idx] = x;
+            if self.len < self.cap { self.len += 1; } else { self.head = (self.head + 1) % self.cap; }
+        }
+        pub fn pop(&mut self) -> Option<T> {
+            if self.len == 0 { return None; }
+            let x = self.buf[self.head].clone();
+            self.head = (self.head + 1) % self.cap;
+            self.len -= 1;
+            Some(x)
+        }
+        pub fn iter(&self) -> RingIter<T> { RingIter{ rb: self, i: 0 } }
+        pub fn len(&self) -> usize { self.len }
+        pub fn is_empty(&self) -> bool { self.len == 0 }
+    }
+    pub struct RingIter<'a, T> { rb: &'a RingBuffer<T>, i: usize }
+    impl<'a, T: Clone> RingIter<'a, T> {
+        pub fn next(&mut self) -> Option<T> {
+            if self.i >= self.rb.len { return None; }
+            let idx = (self.rb.head + self.i) % self.rb.cap;
+            self.i += 1;
+            Some(self.rb.buf[idx].clone())
+        }
+    }
+
+    // LRU<K,V> simple (hashmap + liste d’ordre)
+    pub struct Lru<K,V> {
+        cap: usize,
+        map: std::collections::Map<K,(V, usize)>,
+        order: Vec<K>, // du plus vieux (0) au plus récent (fin)
+    }
+    impl<K: Eq + std::hash::Hash + Clone, V> Lru<K,V> {
+        pub fn with_capacity(cap: usize) -> Self {
+            Self{ cap, map: std::collections::Map::new(), order: Vec<K>::new() }
+        }
+        fn touch(&mut self, k: &K) {
+            // retire si présent puis pousse en fin
+            let mut i = 0;
+            while i < self.order.len() {
+                if &self.order[i] == k { self.order.remove(i); break; }
+                i+=1;
+            }
+            self.order.push(k.clone());
+            if self.order.len() > self.cap {
+                if let Some(evict) = self.order.first().cloned() {
+                    self.order.remove(0);
+                    self.map.remove(&evict);
+                }
+            }
+        }
+        pub fn put(&mut self, k: K, v: V) {
+            self.map.insert(k.clone(), (v, 0));
+            self.touch(&k);
+        }
+        pub fn get(&mut self, k: &K) -> Option<&V> {
+            if !self.map.contains_key(k) { return None; }
+            self.touch(k);
+            self.map.get(k).map(|(v,_)| v)
+        }
+        pub fn len(&self) -> usize { self.map.len() }
+    }
+}
+
+// ————————————————————————————————————————————————
+// re-exports pratiques
+// ————————————————————————————————————————————————
+pub use log::*;
+pub use time::*;
+pub use path::*;
+pub use fs::*;
+pub use env::*;
+pub use args::*;
+pub use proc::*;
+pub use hash::*;
+pub use enc::*;
+pub use text::*;
+pub use ds::*;

@@ -1,0 +1,30 @@
+//! yaml_lite.vitte — sous-ensemble YAML: map simple & listes "- item" → JSON Value
+
+#![version("0.1.0")]
+#![strict]
+
+pub enum Val { Str(str), Arr(Vec<Val>), Obj(std::collections::Map<str, Val>) }
+
+pub fn parse(s:&str)->Val{
+    let mut root=std::collections::Map::new();
+    let mut cur_key="".to_string();
+    let mut cur_arr:Option<Vec<Val>>=None;
+    for raw in s.lines(){
+        let line=raw.trim();
+        if line.is_empty()||line.starts_with('#'){ continue; }
+        if line.starts_with('-'){
+            let item=line[1..].trim();
+            if cur_arr.is_none(){ cur_arr=Some(Vec::new()); }
+            cur_arr.as_mut().unwrap().push(Val::Str(item.to_string()));
+        } else if let Some(col)=line.find(':') {
+            if let Some(arr)=cur_arr.take() {
+                root.insert(cur_key.clone(), Val::Arr(arr));
+            }
+            cur_key=line[..col].trim().to_string();
+            let val=line[col+1..].trim();
+            if !val.is_empty(){ root.insert(cur_key.clone(), Val::Str(val.to_string())); }
+        }
+    }
+    if let Some(arr)=cur_arr.take(){ root.insert(cur_key, Val::Arr(arr)); }
+    Val::Obj(root)
+}

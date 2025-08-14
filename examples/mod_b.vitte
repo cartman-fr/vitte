@@ -1,2 +1,0 @@
-from "mod_a.vitte" import double
-val = double(7)

@@ -1,0 +1,19 @@
+//! mathx.vitte — clamp, lerp, mean/median/stddev
+
+#![version("0.1.0")]
+#![strict]
+
+pub fn clamp<T:PartialOrd>(x:T, lo:T, hi:T)->T{ if x<lo {lo} else if x>hi {hi} else {x} }
+pub fn lerp(a:f64,b:f64,t:f64)->f64{ a + (b-a)*t }
+
+pub fn mean(v:&[f64])->f64{ if v.is_empty(){0.0}else{ v.iter().sum::<f64>()/(v.len() as f64) } }
+pub fn median(v:&[f64])->f64{
+    if v.is_empty(){return 0.0;}
+    let mut w=v.to_vec(); w.sort_by(|a,b| a.partial_cmp(b).unwrap()); 
+    let n=w.len(); if n%2==1 { w[n/2] } else { (w[n/2-1]+w[n/2])/2.0 }
+}
+pub fn stddev(v:&[f64])->f64{
+    if v.len()<2 {return 0.0;}
+    let m=mean(v); let var = v.iter().map(|x| (x-m)*(x-m)).sum::<f64>()/((v.len()-1) as f64);
+    var.sqrt()
+}

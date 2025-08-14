@@ -1,2 +1,0 @@
-# run VM with VITTE_TRACE=1 env to see ip/op/stack
-print("trace ok")

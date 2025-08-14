@@ -1,6 +1,0 @@
-use cli, fs, json
-fn main(){
-  let args = cli::parse(env::argv())
-  if args.contains("--add"){ /* add item */ }
-  print("todo ok")
-}

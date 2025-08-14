@@ -1,2 +1,0 @@
-from "math.vitte" import double
-print(double(10))

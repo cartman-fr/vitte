@@ -1,5 +1,0 @@
-# v8: slice & range
-print(slice("abcdef", 1, 4))  # bcd
-xs = [1,2,3,4,5]
-print(slice(xs, 1, 4))        # [2, 3, 4]
-print(range(1, 5))            # [1, 2, 3, 4]

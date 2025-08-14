@@ -1,0 +1,550 @@
+//! worker-jobs/main.vitte
+//! Queue de jobs avec workers, retries, backoff, priorités et persistence .spool
+//! CLI :
+//!   run                                        — lance le pool de workers
+//!   drain                                      — traite tout puis sort
+//!   enqueue <kind> <json> [--delay ms] [--priority n] [--max-attempts n]
+//!   list                                       — liste les jobs en file
+//!   stats                                      — affiche les métriques
+//!
+//! ENV :
+//!   WORKERS=4                — nombre de workers
+//!   BACKOFF_BASE_MS=1000     — base du backoff exponentiel
+//!   BACKOFF_MAX_MS=1800000   — plafond backoff (30 min par défaut)
+//!   JOB_SPOOL=.spool         — dossier de persistence des jobs
+//!   METRICS_EVERY_MS=5000    — fréquence de dump métriques (0 pour off)
+
+#![version("0.1.0")]
+#![strict]
+#![warn("unsafe_ops","unused","dead_code")]
+
+use std::collections::{Map, BinaryHeap};
+use std::sync::{Arc, Mutex, Condvar, AtomicBool, AtomicU64};
+use std::time::{now};
+use std::fs;
+use std::path;
+use std::rand;
+
+// —————————————————————————————————————————————————————
+// Modèle de job
+// —————————————————————————————————————————————————————
+#[derive(Clone)]
+struct Job {
+    id: str,
+    kind: str,
+    payload: Vec<u8>,     // JSON ou arbitraire
+    priority: i32,        // plus haut = plus urgent
+    attempts: u32,
+    max_attempts: u32,
+    enqueued_at_ms: u64,
+    schedule_at_ms: u64,  // quand il devient éligible
+    last_error: Option<str>,
+    spool_path: Option<str>, // fichier sur disque si persisté
+}
+
+impl Job {
+    fn new(kind: str, payload: Vec<u8>) -> Self {
+        let nowms = std::time::now().unix_millis() as u64;
+        Self {
+            id: std::uuid::v4(),
+            kind,
+            payload,
+            priority: 0,
+            attempts: 0,
+            max_attempts: 10,
+            enqueued_at_ms: nowms,
+            schedule_at_ms: nowms,
+            last_error: None,
+            spool_path: None,
+        }
+    }
+}
+
+// Ordonnancement : plus petit schedule_at d’abord, puis priorité décroissante, puis enqueued_at
+#[derive(Clone)]
+struct QItem { when: u64, prio: i32, seq: u64, job: Job }
+impl std::cmp::Ord for QItem {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // BinaryHeap est max-heap. On inverse pour "plus tôt, plus prioritaire"
+        let a = (-(self.when as i64), self.prio, -(self.seq as i64));
+        let b = (-(other.when as i64), other.prio, -(other.seq as i64));
+        a.cmp(&b)
+    }
+}
+impl std::cmp::PartialOrd for QItem { fn partial_cmp(&self, o: &Self)->Option<std::cmp::Ordering>{ Some(self.cmp(o)) } }
+impl std::cmp::PartialEq for QItem { fn eq(&self, o: &Self)->bool { self.when==o.when && self.prio==o.prio && self.seq==o.seq } }
+impl std::cmp::Eq for QItem {}
+
+// —————————————————————————————————————————————————————
+// Persistence (spool) — JSONL par job (un fichier par job)
+// —————————————————————————————————————————————————————
+mod spool {
+    use super::*;
+    pub fn dir() -> str { std::env::get("JOB_SPOOL").unwrap_or(".spool") }
+
+    pub fn ensure_dir() -> Result<(), str> {
+        let d = dir();
+        if !fs::exists(d) {
+            fs::create_dir_all(d).map_err(|e| format!("{}", e))?;
+        }
+        Ok(())
+    }
+
+    pub fn path_for(id: &str) -> str {
+        let d = dir();
+        format!("{}/{}.job", d, id)
+    }
+
+    pub fn save(job: &Job) -> Result<str, str> {
+        ensure_dir()?;
+        let p = path_for(&job.id);
+        let s = serialize_job(job);
+        fs::write(p.clone(), s.as_bytes()).map_err(|e| format!("{}", e))?;
+        Ok(p)
+    }
+
+    pub fn load_all() -> Vec<Job> {
+        let mut out = Vec<Job>::new();
+        let d = dir();
+        if !fs::exists(d) { return out; }
+        match fs::read_dir(d) {
+            Ok(entries) => {
+                for e in entries {
+                    if e.path.ends_with(".job") {
+                        if let Ok(txt) = fs::read_to_string(e.path.clone()) {
+                            if let Some(j) = deserialize_job(&txt) {
+                                out.push(j);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+        out
+    }
+
+    pub fn remove(job: &Job) {
+        if let Some(p) = &job.spool_path {
+            let _ = fs::remove_file(p);
+        } else {
+            let p = path_for(&job.id);
+            let _ = fs::remove_file(p);
+        }
+    }
+
+    fn serialize_job(j: &Job) -> str {
+        // JSON simple (sans échappes sophistiquées pour le payload qui est base64)
+        let payload_b64 = std::base64::encode(&j.payload);
+        format!(r#"{{"id":"{}","kind":"{}","payload_b64":"{}","priority":{},"attempts":{},"max_attempts":{},"enqueued_at_ms":{},"schedule_at_ms":{},"last_error":{}}}"#,
+            j.id, escape(&j.kind), payload_b64, j.priority, j.attempts, j.max_attempts, j.enqueued_at_ms, j.schedule_at_ms,
+            match &j.last_error { None => "null".into(), Some(e)=>format!(r#""{}""#, escape(e)) }
+        )
+    }
+
+    fn deserialize_job(s: &str) -> Option<Job> {
+        // parsing naïf (ok pour spool)
+        let v = std::json::parse(s).ok()?;
+        let id = v.get_str("id")?;
+        let kind = v.get_str("kind")?;
+        let payload_b64 = v.get_str("payload_b64")?;
+        let payload = std::base64::decode(payload_b64).ok()?;
+        let priority = v.get_i32("priority").unwrap_or(0);
+        let attempts = v.get_u32("attempts").unwrap_or(0);
+        let max_attempts = v.get_u32("max_attempts").unwrap_or(10);
+        let enqueued_at_ms = v.get_u64("enqueued_at_ms").unwrap_or(0);
+        let schedule_at_ms = v.get_u64("schedule_at_ms").unwrap_or(0);
+        let last_error = v.get_opt_str("last_error");
+        let mut j = Job::new(kind, payload);
+        j.id = id;
+        j.priority = priority;
+        j.attempts = attempts;
+        j.max_attempts = max_attempts;
+        j.enqueued_at_ms = enqueued_at_ms;
+        j.schedule_at_ms = schedule_at_ms;
+        j.last_error = last_error;
+        j.spool_path = Some(path_for(&j.id));
+        Some(j)
+    }
+
+    fn escape(x: &str) -> str { std::json::escape(x) }
+}
+
+// —————————————————————————————————————————————————————
+// Registry des handlers
+// —————————————————————————————————————————————————————
+type Handler = fn(&Job) -> Result<(), str>;
+
+struct Registry { map: Map<str, Handler> }
+impl Registry {
+    fn new() -> Self { Self{ map: Map::new() } }
+    fn register(&mut self, kind: &str, h: Handler) { self.map.insert(kind.to_string(), h); }
+    fn get(&self, kind: &str) -> Option<Handler> { self.map.get(kind).cloned() }
+}
+
+// Handlers d’exemple (remplace ou ajoute les tiens)
+fn handler_echo(job: &Job) -> Result<(), str> {
+    let s = std::str::from_utf8(&job.payload).unwrap_or("<bin>");
+    println!("[job:{}] echo: {}", job.id, s);
+    Ok(())
+}
+fn handler_fail_once(job: &Job) -> Result<(), str> {
+    if job.attempts == 0 { return Err("fail-once (testing retry)".into()); }
+    println!("[job:{}] recovered after retry ✅", job.id);
+    Ok(())
+}
+fn handler_email(job: &Job) -> Result<(), str> {
+    // simulation d’envoi d’email
+    std::time::sleep(300); // 300ms
+    println!("[job:{}] email sent (simulé)", job.id);
+    Ok(())
+}
+
+// —————————————————————————————————————————————————————
+// Queue + Workers
+// —————————————————————————————————————————————————————
+struct Queue {
+    heap: BinaryHeap<QItem>,
+    seq: u64,
+    cv: Condvar,
+    mu: Mutex<()>,
+    shutting_down: AtomicBool,
+    // stats :
+    in_flight: AtomicU64,
+    processed: AtomicU64,
+    failed: AtomicU64,
+    retried: AtomicU64,
+}
+
+impl Queue {
+    fn new() -> Self {
+        Self {
+            heap: BinaryHeap::new(),
+            seq: 0,
+            cv: Condvar::new(),
+            mu: Mutex::new(()),
+            shutting_down: AtomicBool::new(false),
+            in_flight: AtomicU64::new(0),
+            processed: AtomicU64::new(0),
+            failed: AtomicU64::new(0),
+            retried: AtomicU64::new(0),
+        }
+    }
+
+    fn push(&mut self, mut job: Job) {
+        // persist si demandé (JOB_SPOOL)
+        if let Ok(p) = spool::save(&job) {
+            job.spool_path = Some(p);
+        }
+        self.seq += 1;
+        let item = QItem{ when: job.schedule_at_ms, prio: job.priority, seq: self.seq, job };
+        self.heap.push(item);
+        self.cv.notify_one();
+    }
+
+    fn reload_spool(&mut self) {
+        let list = spool::load_all();
+        let mut n = 0;
+        for mut j in list {
+            // si déjà passé, replanifie à maintenant
+            let nowms = std::time::now().unix_millis() as u64;
+            if j.schedule_at_ms < nowms { j.schedule_at_ms = nowms; }
+            self.seq += 1;
+            let it = QItem{ when: j.schedule_at_ms, prio: j.priority, seq: self.seq, job: j };
+            self.heap.push(it);
+            n += 1;
+        }
+        if n > 0 { eprintln!("[spool] rechargé {} job(s).", n); }
+    }
+
+    fn next_ready(&mut self) -> Option<Job> {
+        let nowms = std::time::now().unix_millis() as u64;
+        if let Some(top) = self.heap.peek() {
+            if top.when <= nowms {
+                let it = self.heap.pop().unwrap();
+                return Some(it.job);
+            }
+        }
+        None
+    }
+
+    fn wait_until_next(&self) {
+        // attend soit une notif, soit l’heure du prochain job
+        let _g = self.mu.lock();
+        let next_when = self.heap.peek().map(|x| x.when);
+        if let Some(when) = next_when {
+            let nowms = std::time::now().unix_millis() as u64;
+            if when > nowms {
+                let delta = (when - nowms) as i64;
+                let _ = self.cv.wait_timeout(&_g, delta);
+            } else {
+                // déjà échu — ne pas dormir
+            }
+        } else {
+            // pas de job → attente longue (1s) ou notif
+            let _ = self.cv.wait_timeout(&_g, 1000);
+        }
+    }
+
+    fn shutdown(&self) { self.shutting_down.store(true); self.cv.notify_all(); }
+
+    fn stats_snapshot(&self) -> (u64,u64,u64,u64,usize) {
+        (
+            self.in_flight.load(),
+            self.processed.load(),
+            self.failed.load(),
+            self.retried.load(),
+            self.heap.len()
+        )
+    }
+}
+
+// —————————————————————————————————————————————————————
+// Backoff
+// —————————————————————————————————————————————————————
+fn compute_backoff_ms(attempt: u32) -> u64 {
+    let base = std::env::get("BACKOFF_BASE_MS").unwrap_or("1000").parse::<u64>().unwrap_or(1000);
+    let cap  = std::env::get("BACKOFF_MAX_MS").unwrap_or("1800000").parse::<u64>().unwrap_or(1800000);
+    let pow = if attempt == 0 { 1 } else { 1u64.checked_shl((attempt-1).min(30)) .unwrap_or(u64::MAX) };
+    let raw = base.saturating_mul(pow);
+    let jitter = (std::rand::u32() as u64) % base;
+    std::cmp::min(raw.saturating_add(jitter), cap)
+}
+
+// —————————————————————————————————————————————————————
+// Worker Pool
+// —————————————————————————————————————————————————————
+struct Pool {
+    q: Arc<Mutex<Queue>>, // Mutex protège heap/seq uniquement
+    reg: Arc<Registry>,
+    n_workers: usize,
+}
+
+impl Pool {
+    fn new(q: Arc<Mutex<Queue>>, reg: Arc<Registry>, n: usize) -> Self {
+        Self { q, reg, n_workers: n.max(1) }
+    }
+
+    fn run(&self, drain: bool) {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        // Thread métriques
+        let q_for_metrics = self.q.clone();
+        let metrics_every = std::env::get("METRICS_EVERY_MS").unwrap_or("5000").parse::<u64>().unwrap_or(5000);
+        if metrics_every > 0 {
+            let stop_m = stop_flag.clone();
+            std::thread::spawn(move || {
+                loop {
+                    if stop_m.load() { break; }
+                    std::time::sleep(metrics_every as i64);
+                    let (in_flight, ok, ko, rt, queued) = q_for_metrics.lock().stats_snapshot();
+                    eprintln!("[metrics] in_flight={} ok={} fails={} retried={} queued={}", in_flight, ok, ko, rt, queued);
+                }
+            });
+        }
+
+        // Threads workers
+        let mut handles = Vec<std::thread::JoinHandle>();
+        for wid in 0..self.n_workers {
+            let q = self.q.clone();
+            let reg = self.reg.clone();
+            let stop = stop_flag.clone();
+            handles.push(std::thread::spawn(move || {
+                worker_loop(wid, q, reg, stop, drain);
+            }));
+        }
+
+        // Attente conditionnelle (drain: on sort quand file vide et aucun in_flight)
+        if drain {
+            loop {
+                std::time::sleep(200);
+                let (in_flight, _, _, _, queued) = self.q.lock().stats_snapshot();
+                if in_flight == 0 && queued == 0 { break; }
+            }
+            stop_flag.store(true);
+            self.q.lock().shutdown();
+        } else {
+            // mode run: bloque jusqu’à Ctrl+C (pas de signaux ici → boucle veille)
+            loop { std::time::sleep(1000); }
+        }
+
+        // fin
+        for h in handles { let _ = h.join(); }
+    }
+}
+
+fn worker_loop(wid: usize, q: Arc<Mutex<Queue>>, reg: Arc<Registry>, stop: Arc<AtomicBool>, drain: bool) {
+    loop {
+        if stop.load() { break; }
+        // prendre un job prêt
+        let maybe_job = {
+            let mut qm = q.lock();
+            match qm.next_ready() {
+                Some(j) => {
+                    qm.in_flight.fetch_add(1);
+                    Some(j)
+                },
+                None => { qm.wait_until_next(); None }
+            }
+        };
+        let Some(mut job) = maybe_job else { continue; };
+
+        // exécuter
+        let res = match reg.get(&job.kind) {
+            None => Err(format!("unknown job kind: {}", job.kind)),
+            Some(h) => h(&job),
+        };
+
+        match res {
+            Ok(_) => {
+                // succès → stats & purge spool
+                let mut qm = q.lock();
+                qm.in_flight.fetch_sub(1);
+                qm.processed.fetch_add(1);
+                spool::remove(&job);
+            }
+            Err(err) => {
+                // échec → retry ou fail définitif
+                job.attempts += 1;
+                job.last_error = Some(err.clone());
+                let retry = job.attempts < job.max_attempts;
+                if retry {
+                    let delay = compute_backoff_ms(job.attempts);
+                    job.schedule_at_ms = (std::time::now().unix_millis() as u64).saturating_add(delay);
+                    {
+                        let mut qm = q.lock();
+                        qm.in_flight.fetch_sub(1);
+                        qm.retried.fetch_add(1);
+                        // ré-écrire spool avec état mis à jour
+                        let _ = spool::save(&job);
+                        // requeue
+                        qm.seq += 1;
+                        let it = QItem{ when: job.schedule_at_ms, prio: job.priority, seq: qm.seq, job };
+                        qm.heap.push(it);
+                        qm.cv.notify_one();
+                    }
+                } else {
+                    let mut qm = q.lock();
+                    qm.in_flight.fetch_sub(1);
+                    qm.failed.fetch_add(1);
+                    eprintln!("[worker:{}] job {} failed permanently after {} attempts: {}", wid, job.id, job.attempts, err);
+                    // on supprime du spool (ou le déplacer vers .dead ?)
+                    spool::remove(&job);
+                }
+            }
+        }
+
+        if drain && stop.load() { break; }
+    }
+}
+
+// —————————————————————————————————————————————————————
+// CLI helpers
+// —————————————————————————————————————————————————————
+fn parse_i32(s: &str, def: i32) -> i32 { s.parse::<i32>().unwrap_or(def) }
+fn parse_u32(s: &str, def: u32) -> u32 { s.parse::<u32>().unwrap_or(def) }
+fn parse_u64(s: &str, def: u64) -> u64 { s.parse::<u64>().unwrap_or(def) }
+
+fn print_list(q: &Queue) {
+    println!("ID                                   when(ms)        prio  kind        attempts/max  note");
+    let mut tmp = q.heap.clone().into_vec();
+    tmp.sort_by(|a,b| a.when.cmp(&b.when).then(b.prio.cmp(&a.prio)));
+    for it in tmp {
+        let j = &it.job;
+        let note = j.last_error.as_ref().map(|e| e.as_str()).unwrap_or("");
+        println!("{}  {:>14}  {:>4}  {:<10}  {}/{}          {}",
+            j.id, it.when, it.prio, j.kind, j.attempts, j.max_attempts, note);
+    }
+}
+
+fn do_enqueue(args: [str], q: &mut Queue) -> int {
+    if args.len() < 4 {
+        eprintln!("usage: enqueue <kind> <json> [--delay ms] [--priority n] [--max-attempts n]");
+        return 2;
+    }
+    let kind = args[2];
+    let json = args[3];
+    let mut delay_ms: u64 = 0;
+    let mut prio: i32 = 0;
+    let mut max_attempts: u32 = 10;
+
+    // parse options
+    let mut i = 4;
+    while i < args.len() {
+        match args[i] {
+            "--delay" if i+1 < args.len() => { delay_ms = parse_u64(args[i+1], 0); i+=1; }
+            "--priority" if i+1 < args.len() => { prio = parse_i32(args[i+1], 0); i+=1; }
+            "--max-attempts" if i+1 < args.len() => { max_attempts = parse_u32(args[i+1], 10); i+=1; }
+            x => { eprintln!("option inconnue: {}", x); return 2; }
+        }
+        i += 1;
+    }
+
+    let mut job = Job::new(kind.to_string(), json.as_bytes().to_vec());
+    job.priority = prio;
+    job.max_attempts = max_attempts;
+    if delay_ms > 0 {
+        job.schedule_at_ms = (std::time::now().unix_millis() as u64) + delay_ms;
+    }
+
+    q.push(job);
+    println!("OK");
+    0
+}
+
+fn do_stats(q: &Queue) {
+    let (in_flight, ok, ko, rt, queued) = q.stats_snapshot();
+    println!(r#"{{"in_flight":{},"processed":{},"failed":{},"retried":{},"queued":{}}}"#, in_flight, ok, ko, rt, queued);
+}
+
+// —————————————————————————————————————————————————————
+// MAIN
+// —————————————————————————————————————————————————————
+fn main(args: [str]) -> int {
+    if args.len() <= 1 {
+        eprintln!("usage: worker-jobs <run|drain|enqueue|list|stats> [...]");
+        return 2;
+    }
+
+    // Registry par défaut — ajoute tes handlers ici
+    let mut reg = Registry::new();
+    reg.register("echo", handler_echo);
+    reg.register("email", handler_email);
+    reg.register("fail-once", handler_fail_once);
+    let reg = Arc::new(reg);
+
+    // Création queue + reload spool
+    let queue = Arc::new(Mutex::new(Queue::new()));
+    {
+        let mut q = queue.lock();
+        q.reload_spool();
+    }
+
+    match args[1] {
+        "enqueue" => {
+            let mut q = queue.lock();
+            return do_enqueue(args, &mut q);
+        }
+        "list" => {
+            let q = queue.lock();
+            print_list(&q);
+            return 0;
+        }
+        "stats" => {
+            let q = queue.lock();
+            do_stats(&q);
+            return 0;
+        }
+        "drain" | "run" => {
+            let n = std::env::get("WORKERS").unwrap_or("4").parse::<usize>().unwrap_or(4);
+            let pool = Pool::new(queue.clone(), reg.clone(), n);
+            let drain = args[1] == "drain";
+            eprintln!("[pool] starting {} worker(s) — drain={}", n, drain);
+            pool.run(drain);
+            return 0;
+        }
+        other => {
+            eprintln!("commande inconnue: {}", other);
+            return 2;
+        }
+    }
+}

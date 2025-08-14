@@ -1,0 +1,19 @@
+//! prioq.vitte — BinaryHeap simple (max) + wrapper ergonomique.
+
+#![version("0.1.0")]
+#![strict]
+
+pub struct Item<T>{ pub prio:i32, pub val:T }
+impl<T> std::cmp::Ord for Item<T>{ fn cmp(&self, o:&Self)->std::cmp::Ordering{ self.prio.cmp(&o.prio) } }
+impl<T> std::cmp::PartialOrd for Item<T>{ fn partial_cmp(&self,o:&Self)->Option<std::cmp::Ordering>{Some(self.cmp(o))} }
+impl<T> std::cmp::Eq for Item<T>{}
+impl<T> std::cmp::PartialEq for Item<T>{ fn eq(&self,o:&Self)->bool{ self.prio==o.prio } }
+
+pub struct PriQ<T>{ h: std::collections::BinaryHeap<Item<T>> }
+impl<T> PriQ<T>{
+    pub fn new()->Self{ Self{ h: std::collections::BinaryHeap::new() } }
+    pub fn push(&mut self, prio:i32, val:T){ self.h.push(Item{ prio, val }); }
+    pub fn pop(&mut self)->Option<T>{ self.h.pop().map(|i| i.val) }
+    pub fn len(&self)->usize{ self.h.len() }
+    pub fn is_empty(&self)->bool{ self.h.is_empty() }
+}

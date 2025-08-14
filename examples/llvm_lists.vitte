@@ -1,6 +1,0 @@
-# Démo LLVM avec listes (nécessite vitte-rt linké)
-lst = [1,2,3]
-lst.push(4)
-print(len(lst))
-lst.set(0, 42)
-lst[0]

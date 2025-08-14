@@ -1,3 +1,0 @@
-# Module A
-import "math.vitte" as M
-print(M.double(21))

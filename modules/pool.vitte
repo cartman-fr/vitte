@@ -1,0 +1,17 @@
+//! pool.vitte — pool d’objets avec constructeur & reset.
+
+#![version("0.1.0")]
+#![strict]
+
+pub struct Pool<T> {
+    free: std::collections::VecDeque<T>,
+    make: fn()->T,
+    reset: Option<fn(&mut T)>,
+    mu: std::sync::Mutex<()>,
+}
+impl<T> Pool<T> {
+    pub fn new(make: fn()->T) -> Self { Self{ free: std::collections::VecDeque::new(), make, reset: None, mu: std::sync::Mutex::new(()) } }
+    pub fn with_reset(make: fn()->T, reset: fn(&mut T)) -> Self { Self{ free: std::collections::VecDeque::new(), make, reset: Some(reset), mu: std::sync::Mutex::new(()) } }
+    pub fn get(&self) -> T { let _g=self.mu.lock(); self.free.pop_front().unwrap_or_else(self.make) }
+    pub fn put(&self, mut obj:T) { if let Some(r)=self.reset { r(&mut obj); } let _g=self.mu.lock(); self.free.push_back(obj); }
+}

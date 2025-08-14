@@ -1,0 +1,30 @@
+//! rate_limiter.vitte — token-bucket (QPS) et fenêtre glissante.
+
+#![version("0.1.0")]
+#![strict]
+
+pub struct TokenBucket {
+    cap: u64, refill_per_sec: u64,
+    tokens: std::sync::AtomicU64,
+    last_s: std::sync::AtomicU64,
+}
+
+impl TokenBucket {
+    pub fn new(qps:u64, burst:u64)->Self {
+        Self{ cap:burst.max(qps), refill_per_sec:qps, tokens:std::sync::AtomicU64::new(burst), last_s:std::sync::AtomicU64::new(0) }
+    }
+    pub fn allow(&self) -> bool {
+        let now = (std::time::now().unix_secs()) as u64;
+        let last = self.last_s.load();
+        if now>last {
+            let delta=now-last;
+            let add = self.refill_per_sec.saturating_mul(delta);
+            let cur = (self.tokens.load()+add).min(self.cap);
+            self.tokens.store(cur);
+            self.last_s.store(now);
+        }
+        let cur = self.tokens.load();
+        if cur==0 { return false; }
+        self.tokens.store(cur-1); true
+    }
+}

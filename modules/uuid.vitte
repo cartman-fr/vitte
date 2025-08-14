@@ -1,0 +1,38 @@
+//! uuid.vitte — UUID v4 random + parse.
+
+#![version("0.1.0")]
+#![strict]
+
+pub fn v4() -> str {
+    let mut b = [0u8;16];
+    let mut i=0; while i<16 { b[i]= (std::rand::u32() & 0xFF) as u8; i+=1; }
+    b[6] = (b[6] & 0x0F) | 0x40; // version
+    b[8] = (b[8] & 0x3F) | 0x80; // variant
+    to_string(&b)
+}
+pub fn parse(s:&str)->Option<[u8;16]>{
+    if s.len()!=36 { return None; }
+    let mut b=[0u8;16]; let mut bi=0; let mut i=0;
+    while i<s.len() {
+        if [8,13,18,23].contains(&i) { if s.as_bytes()[i] as char != '-' { return None; } i+=1; continue; }
+        let h = hex(&s[i..i+2])?; b[bi]=h; bi+=1; i+=2;
+    }
+    Some(b)
+}
+fn hex(x:&str)->Option<u8>{
+    let n = |c:char| if c>='0'&&c<='9'{Some(c as u8 - b'0')} else if c>='a'&&c<='f'{Some(10+c as u8 - b'a')} else if c>='A'&&c<='F'{Some(10+c as u8 - b'A')} else {None};
+    let mut it = x.chars();
+    Some((n(it.next()?)?<<4) | n(it.next()?)?)
+}
+fn to_string(b:&[u8;16])->str{
+    let hex = |v:u8| -> [char;2] {
+        let h = "0123456789abcdef".chars().collect::<Vec<char>>();
+        [h[(v>>4) as usize], h[(v&0xF) as usize]]
+    };
+    let mut s = String::with_capacity(36);
+    let mut i=0; while i<16 {
+        if [4,6,8,10].contains(&i) { s.push('-'); }
+        let h = hex(b[i]); s.push(h[0]); s.push(h[1]); i+=1;
+    }
+    s
+}

@@ -1,0 +1,29 @@
+//! validate.vitte — validations rapides (email/url/uuid/ranges/non-empty, etc.)
+
+#![version("0.1.0")]
+#![strict]
+
+pub fn non_empty(s:&str)->bool{ !s.trim().is_empty() }
+pub fn min_len(s:&str, n:usize)->bool{ s.chars().count()>=n }
+pub fn max_len(s:&str, n:usize)->bool{ s.chars().count()<=n }
+
+pub fn is_email(s:&str)->bool{
+    let at = s.find('@'); if at.is_none(){ return false; }
+    let (l,r) = (&s[..at.unwrap()], &s[at.unwrap()+1..]);
+    non_empty(l) && r.contains('.') && !r.starts_with('.') && !r.ends_with('.')
+}
+pub fn is_uuid(s:&str)->bool{
+    let hex = |c:char| c.is_ascii_hexdigit();
+    let ch:Vec<char> = s.chars().collect();
+    if ch.len()!=36 { return false; }
+    for (i,&c) in ch.iter().enumerate() {
+        match i {
+            8|13|18|23 => if c!='-' { return false; },
+            _ => if !hex(c) { return false; }
+        }
+    }
+    true
+}
+pub fn is_url_http_https(s:&str)->bool{ s.starts_with("http://")||s.starts_with("https://") }
+pub fn in_range_i64(x:i64, lo:i64, hi:i64)->bool{ x>=lo && x<=hi }
+pub fn in_range_f64(x:f64, lo:f64, hi:f64)->bool{ x>=lo && x<=hi }

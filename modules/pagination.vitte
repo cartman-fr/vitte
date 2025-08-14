@@ -1,0 +1,14 @@
+//! pagination.vitte — Page<T> from slice + token simple.
+
+#![version("0.1.0")]
+#![strict]
+
+pub struct Page<T>{ pub items:Vec<T>, pub next: Option<str> }
+
+pub fn paginate<T: Clone>(v:&[T], limit:usize, token:Option<&str>)->Page<T>{
+    let start = token.and_then(|t| t.parse::<usize>().ok()).unwrap_or(0);
+    let end = (start+limit).min(v.len());
+    let items = v[start..end].to_vec();
+    let next = if end < v.len() { Some(end.to_string()) } else { None };
+    Page{ items, next }
+}

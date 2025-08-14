@@ -1,0 +1,16 @@
+//! tracing.vitte — traces basiques: Span::enter/exit, event(), export JSONL.
+
+#![version("0.1.0")]
+#![strict]
+
+pub struct Span { pub name:str, start:u128 }
+pub fn span(name:str)->Span{ Span{ name, start: std::time::now().unix_millis() as u128 } }
+impl Span { pub fn end(self)->str{ let dur=(std::time::now().unix_millis() as u128)-self.start; format!(r#"{{"ts":{},"span":"{}","dur_ms":{}}}"#, self.start, name_quote(&self.name), dur) } }
+
+pub fn event(name:str, kv:std::collections::Map<str,str>)->str{
+    let ts=std::time::now().unix_millis();
+    let mut pairs=String::new(); let mut first=true;
+    for (k,v) in kv.iter(){ if !first{pairs.push(',');} first=false; pairs.push_str(format!(r#""{}":"{}""#, name_quote(k), name_quote(v))); }
+    format!(r#"{{"ts":{},"event":"{}","kv":{{{}}}}}"#, ts, name_quote(name), pairs)
+}
+fn name_quote(s:&str)->str{ std::json::escape(s) }

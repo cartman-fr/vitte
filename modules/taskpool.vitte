@@ -1,0 +1,32 @@
+//! taskpool.vitte — exécuteur simple : pool fixe, spawn(), scope(), join.
+
+#![version("0.1.0")]
+#![strict]
+
+pub struct TaskPool {
+    tx: std::sync::mpsc::Sender<Box<dyn FnOnce() + Send + 'static>>,
+    handles: Vec<std::thread::JoinHandle>,
+}
+
+impl TaskPool {
+    pub fn new(n: usize) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel::<Box<dyn FnOnce() + Send + 'static>>();
+        let mut handles = Vec<std::thread::JoinHandle>::new();
+        let n = n.max(1);
+        for _ in 0..n {
+            let rxc = rx.clone();
+            handles.push(std::thread::spawn(move || {
+                loop {
+                    match rxc.recv() {
+                        Ok(job) => job(),
+                        Err(_)  => break,
+                    }
+                }
+            }));
+        }
+        Self{ tx, handles }
+    }
+    pub fn spawn<F: FnOnce() + Send + 'static>(&self, f: F) { let _ = self.tx.send(Box::new(f)); }
+    pub fn scope<F: FnOnce(&TaskPool)>(&self, f: F) { f(self); }
+    pub fn shutdown(self){ drop(self.tx); for h in self.handles { let _=h.join(); } }
+}

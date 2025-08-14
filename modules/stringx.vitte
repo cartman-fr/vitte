@@ -1,0 +1,39 @@
+//! stringx.vitte — slugify, levenshtein, truncate_middle
+
+#![version("0.1.0")]
+#![strict]
+
+pub fn slugify(s:&str)->str{
+    let mut out=String::new();
+    for c in s.chars(){
+        let c=c.to_lower();
+        if c.is_alphanumeric(){ out.push(c); }
+        else if c.is_whitespace() && !out.ends_with('-'){ out.push('-'); }
+    }
+    out.trim_matches('-').to_string()
+}
+
+pub fn levenshtein(a:&str,b:&str)->usize{
+    let (m,n)=(a.len(),b.len());
+    let mut dp=Vec<usize>::new(); dp.resize(n+1,0);
+    for j in 0..=n { dp[j]=j; }
+    for (i,ca) in a.chars().enumerate() {
+        let mut prev = dp[0]; dp[0]=i+1;
+        for (j,cb) in b.chars().enumerate() {
+            let tmp = dp[j+1];
+            dp[j+1] = std::cmp::min(
+                std::cmp::min(dp[j+1]+1, dp[j]+1),
+                prev + if ca==cb {0}else{1}
+            );
+            prev = tmp;
+        }
+    }
+    dp[n]
+}
+
+pub fn truncate_middle(s:&str, max:usize)->str{
+    if s.len()<=max { return s.to_string(); }
+    if max<=3 { return s[..max].to_string(); }
+    let k=(max-3)/2;
+    format!("{}...{}", &s[..k], &s[s.len()-k..])
+}

@@ -1,6 +1,0 @@
-# Démo LLVM strings (nécessite vitte-rt linké)
-a = "hel"
-b = "lo"
-print(a)     # print_str (via runtime)
-print(len(a))# len_str (via runtime)
-a + b        # concat (commentée dans IR pour l'instant)

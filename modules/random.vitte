@@ -1,0 +1,11 @@
+//! random.vitte — wrappers RNG (ints, floats, choice, shuffle)
+
+#![version("0.1.0")]
+#![strict]
+
+pub fn u32() -> u32 { std::rand::u32() }
+pub fn u64() -> u64 { ((std::rand::u32() as u64) << 32) ^ (std::rand::u32() as u64) }
+pub fn usize(max: usize) -> usize { (u32() as usize) % max.max(1) }
+pub fn f64() -> f64 { (u32() as f64) / (u32::MAX as f64) }
+pub fn choice<T: Clone>(v:&[T]) -> Option<T> { if v.is_empty(){None}else{Some(v[usize(v.len())].clone())} }
+pub fn shuffle<T>(v:&mut [T]){ let mut i=v.len(); while i>1 { i-=1; let j=usize(i+1); v.swap(i, j); } }

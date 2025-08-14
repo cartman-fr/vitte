@@ -1,0 +1,21 @@
+//! plugin.vitte — registre statique de fonctions nommées.
+
+#![version("0.1.0")]
+#![strict]
+
+pub type Plugin = fn(args: Vec<str>) -> Result<str,str>;
+
+static mut REG: Option<std::collections::Map<str, Plugin>> = None;
+
+pub fn register(name: str, f: Plugin){
+    unsafe {
+        if REG.is_none(){ REG=Some(std::collections::Map::new()); }
+        REG.as_mut().unwrap().insert(name, f);
+    }
+}
+pub fn call(name:&str, args:Vec<str>)->Result<str,str>{
+    unsafe {
+        if let Some(f)=REG.as_ref().and_then(|m| m.get(name)).cloned() { f(args) }
+        else { Err(format!("plugin introuvable: {}", name)) }
+    }
+}

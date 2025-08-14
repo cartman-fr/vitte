@@ -1,0 +1,36 @@
+//! scheduler.vitte — "every(ms)" et "daily HH:MM" + callbacks.
+
+#![version("0.1.0")]
+#![strict]
+
+pub enum Rule { Every(u64), Daily{ hour:u8, min:u8 } }
+pub struct Task { pub name: str, pub rule: Rule, pub run: fn() }
+
+pub struct Scheduler { tasks: Vec<Task>, stop: std::sync::AtomicBool }
+
+impl Scheduler {
+    pub fn new() -> Self { Self{ tasks: Vec::new(), stop: std::sync::AtomicBool::new(false) } }
+    pub fn add(mut self, t: Task) -> Self { self.tasks.push(t); self }
+    pub fn start(self) -> std::thread::JoinHandle {
+        std::thread::spawn(move || { self.loop_run(); })
+    }
+    pub fn shutdown(&self){ self.stop.store(true); }
+
+    fn loop_run(self) {
+        loop {
+            if self.stop.load() { break; }
+            let now = std::time::now();
+            for t in self.tasks.iter() {
+                match t.rule {
+                    Rule::Every(ms) => { (t.run)(); std::time::sleep(ms as i64); }
+                    Rule::Daily{hour, min} => {
+                        let cur = now;
+                        let (h,m) = (cur.hour(), cur.minute());
+                        if h==hour && m==min { (t.run)(); std::time::sleep(60_000); }
+                    }
+                }
+            }
+            std::time::sleep(50);
+        }
+    }
+}

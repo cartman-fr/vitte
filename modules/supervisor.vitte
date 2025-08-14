@@ -1,0 +1,17 @@
+//! supervisor.vitte — relance un process crashé (backoff + max_restarts)
+
+#![version("0.1.0")]
+#![strict]
+
+pub struct Spec { pub cmd: str, pub args: Vec<str>, pub max_restarts:u32, pub backoff_ms:u64 }
+pub fn run(mut s:Spec){
+    let mut restarts=0u32;
+    loop {
+        eprintln!("[supervisor] start: {} {:?}", s.cmd, s.args);
+        let code = std::process::spawn_wait(&s.cmd, &s.args).unwrap_or(1);
+        if code==0 { break; }
+        restarts+=1;
+        if restarts>s.max_restarts { eprintln!("[supervisor] too many restarts"); break; }
+        std::time::sleep(s.backoff_ms as i64);
+    }
+}

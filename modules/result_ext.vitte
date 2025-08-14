@@ -1,0 +1,18 @@
+//! result_ext.vitte — context(), tap_err(), or_log()
+
+#![version("0.1.0")]
+#![strict]
+
+pub trait ResultExt<T,E> {
+    fn context(self, msg:&str) -> Result<T,str>;
+    fn tap_err(self, f: fn(&str));
+}
+impl<T> ResultExt<T,str> for Result<T,str> {
+    fn context(self, msg:&str)->Result<T,str>{ self.map_err(|e| format!("{}: {}", msg, e)) }
+    fn tap_err(self, f: fn(&str)){ if let Err(e)=&self { f(e); } }
+}
+
+pub trait OptionExt<T> { fn or_log(self, m:&str)->Option<T>; }
+impl<T> OptionExt<T> for Option<T> {
+    fn or_log(self, m:&str)->Option<T>{ if self.is_none(){ eprintln!("{}", m); } self }
+}

@@ -1,0 +1,80 @@
+//! metrics.vitte — counters/gauges/histograms + export Prometheus text exposition.
+
+#![version("0.1.0")]
+#![strict]
+
+pub enum MetricKind { Counter, Gauge, Histogram }
+
+pub struct Registry {
+    m: std::sync::Mutex<std::collections::Map<str, Metric>>,
+}
+pub struct Labels(std::collections::Map<str,str>);
+
+pub struct Counter { v: std::sync::AtomicU64 }
+pub struct Gauge { v: std::sync::AtomicI64 }
+pub struct Histogram { buckets: Vec<f64>, counts: Vec<std::sync::AtomicU64>, sum: std::sync::AtomicF64 }
+
+pub enum Metric {
+    C{ name: str, help: str, labels: Labels, c: Counter },
+    G{ name: str, help: str, labels: Labels, g: Gauge },
+    H{ name: str, help: str, labels: Labels, h: Histogram },
+}
+
+impl Registry {
+    pub fn new() -> Self { Self{ m: std::sync::Mutex::new(std::collections::Map::new()) } }
+
+    pub fn counter(&self, name: str, help: str) -> Counter {
+        let c = Counter{ v: std::sync::AtomicU64::new(0) };
+        self.m.lock().insert(name.clone(), Metric::C{ name, help, labels: Labels(std::collections::Map::new()), c: c.clone() });
+        c
+    }
+    pub fn gauge(&self, name: str, help: str) -> Gauge {
+        let g = Gauge{ v: std::sync::AtomicI64::new(0) };
+        self.m.lock().insert(name.clone(), Metric::G{ name, help, labels: Labels(std::collections::Map::new()), g: g.clone() });
+        g
+    }
+    pub fn histogram(&self, name: str, help: str, buckets: Vec<f64>) -> Histogram {
+        let mut counts = Vec<std::sync::AtomicU64>::new();
+        let mut i=0; while i<buckets.len(){ counts.push(std::sync::AtomicU64::new(0)); i+=1; }
+        let h = Histogram{ buckets, counts, sum: std::sync::AtomicF64::new(0.0) };
+        self.m.lock().insert(name.clone(), Metric::H{ name, help, labels: Labels(std::collections::Map::new()), h: h.clone() });
+        h
+    }
+
+    pub fn prometheus(&self) -> str {
+        let m = self.m.lock();
+        let mut out = String::new();
+        for (_,metric) in m.iter() {
+            match metric {
+                Metric::C{ name, help, c, .. } => {
+                    out.push_str(format!("# HELP {} {}\n# TYPE {} counter\n{} {}\n", name, help, name, name, c.v.load()));
+                }
+                Metric::G{ name, help, g, .. } => {
+                    out.push_str(format!("# HELP {} {}\n# TYPE {} gauge\n{} {}\n", name, help, name, name, g.v.load()));
+                }
+                Metric::H{ name, help, h, .. } => {
+                    out.push_str(format!("# HELP {} {}\n# TYPE {} histogram\n", name, help, name));
+                    let mut i=0;
+                    let mut acc=0u64;
+                    while i<h.buckets.len() {
+                        let c = h.counts[i].load();
+                        acc += c;
+                        out.push_str(format!("{}_bucket{{le=\"{}\"}} {}\n", name, h.buckets[i], acc));
+                        i+=1;
+                    }
+                    out.push_str(format!("{}_sum {}\n{}_count {}\n", name, h.sum.load(), name, acc));
+                }
+            }
+        }
+        out
+    }
+}
+
+impl Counter { pub fn inc(&self){ self.v.fetch_add(1); } pub fn add(&self, n:u64){ self.v.fetch_add(n); } }
+impl Gauge { pub fn set(&self, v:i64){ self.v.store(v); } pub fn inc(&self){ self.v.fetch_add(1); } pub fn dec(&self){ self.v.fetch_sub(1); } }
+impl Histogram {
+    pub fn observe(&self, x:f64){
+        self.sum.fetch_add(x);
+        let mut i=0; while i<self.buckets.len(){ if x<=self.buckets[i]{ self.counts[i].fetch_add(1); break; } i+=1; }
+    }
+}

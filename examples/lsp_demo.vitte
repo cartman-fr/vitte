@@ -1,4 +1,0 @@
-
-# Hover over 'answer' should show type, go-to-def should jump here
-answer = 42
-print(answer)

@@ -1,7 +1,0 @@
-# Démonstration conceptuelle: accumulation via capture (cell boxée)
-sum = 0
-acc = x -> sum + x   # lecture (GetCapture)
-# Pour l'écriture, prochaine étape: SetCapture via syntaxe dédiée.
-lst = [1,2,3]
-res = map(lst, acc)
-print(len(res))

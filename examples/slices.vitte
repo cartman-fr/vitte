@@ -1,6 +1,0 @@
-# Démo slices côté LLVM runtime
-lst = [10,20,30,40]
-sub = lst[1:3]
-print(len(sub))
-s = "hello"
-s2 = s[1:4]  # "ell" (runtime slice)

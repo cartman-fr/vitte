@@ -1,8 +1,0 @@
-# Demo simple: variables, addition, print, list push & len
-x = 1
-y = 2
-z = x + y
-print(z)
-lst = [1, 2, 3]
-lst.push(4)
-print(len(lst))
