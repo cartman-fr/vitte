@@ -1,0 +1,125 @@
+# =========================================
+# editor-plugins/vscode/package.json
+# =========================================
+{
+  "name": "vitte",
+  "displayName": "Vitte Language Support",
+  "description": "Syntaxe, formatage, diagnostics et commandes pour le langage Vitte (.vitte, .vit).",
+  "version": "0.1.0",
+  "publisher": "vitte-lang",
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages"],
+  "icon": "media/icon.png",
+  "repository": { "type": "git", "url": "https://github.com/<org>/<repo>" },
+  "bugs": { "url": "https://github.com/<org>/<repo>/issues" },
+  "homepage": "https://github.com/<org>/<repo>",
+  "activationEvents": [
+    "onLanguage:vitte",
+    "onCommand:vitte.run",
+    "onCommand:vitte.build",
+    "onCommand:vitte.test",
+    "onCommand:vitte.fmt",
+    "onCommand:vitte.check"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "vitte",
+        "aliases": ["Vitte", "vitte"],
+        "extensions": [".vitte", ".vit"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "vitte",
+        "scopeName": "source.vitte",
+        "path": "./syntaxes/vitte.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "vitte",
+        "path": "./snippets/vitte.code-snippets"
+      }
+    ],
+    "configuration": {
+      "title": "Vitte",
+      "properties": {
+        "vitte.vitcPath": {
+          "type": "string",
+          "default": "vitc",
+          "description": "Chemin du compilateur Vitte (vitc)."
+        },
+        "vitte.fmtPath": {
+          "type": "string",
+          "default": "vitte-fmt",
+          "description": "Chemin du formateur (vitte-fmt)."
+        },
+        "vitte.enableDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Activer les diagnostics via `vitc check` à l’enregistrement."
+        },
+        "vitte.checkArgs": {
+          "type": "array",
+          "default": ["check"],
+          "description": "Arguments passés à `vitc` pour la vérification.",
+          "items": { "type": "string" }
+        },
+        "vitte.buildArgs": {
+          "type": "array",
+          "default": ["build"],
+          "description": "Arguments par défaut pour `vitte: Build`.",
+          "items": { "type": "string" }
+        },
+        "vitte.runArgs": {
+          "type": "array",
+          "default": ["run"],
+          "description": "Arguments par défaut pour `vitte: Run`.",
+          "items": { "type": "string" }
+        },
+        "vitte.testArgs": {
+          "type": "array",
+          "default": ["test"],
+          "description": "Arguments par défaut pour `vitte: Test`.",
+          "items": { "type": "string" }
+        },
+        "vitte.formatOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Formater à l’enregistrement en utilisant vitte-fmt."
+        }
+      }
+    },
+    "commands": [
+      { "command": "vitte.run", "title": "Vitte: Run" },
+      { "command": "vitte.build", "title": "Vitte: Build" },
+      { "command": "vitte.test", "title": "Vitte: Test" },
+      { "command": "vitte.fmt", "title": "Vitte: Format Document" },
+      { "command": "vitte.check", "title": "Vitte: Check (Diagnostics)" }
+    ],
+    "keybindings": [
+      { "command": "vitte.run", "key": "ctrl+alt+r", "when": "editorLangId == vitte" },
+      { "command": "vitte.build", "key": "ctrl+alt+b", "when": "editorLangId == vitte" },
+      { "command": "vitte.test", "key": "ctrl+alt+t", "when": "editorLangId == vitte" },
+      { "command": "vitte.fmt", "key": "ctrl+alt+f", "when": "editorLangId == vitte" },
+      { "command": "vitte.check", "key": "ctrl+alt+c", "when": "editorLangId == vitte" }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "package": "vsce package",
+    "lint": "echo 'no lints configured'",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0",
+    "vsce": "^3.0.0"
+  }
+}
