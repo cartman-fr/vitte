@@ -1,273 +1,214 @@
 #!/usr/bin/env bash
-# scripts/fmt.sh — Formatage automatique du monorepo Vitte
-# - Rust      : cargo fmt
-# - Vitte     : vitte-fmt (stdin) sur *.vitte / *.vit
-# - Node/Docs : Prettier (json, md, yaml, yml, mdx, toml* via plugin si présent)
-# - Shell     : shfmt (Bourne shell)
+# /scripts/fmt.sh — Formatage ultra-complet du repo Vitte
+# -----------------------------------------------------------------------------
+# Usage:
+#   ./scripts/fmt.sh              # format en place (mode write)
+#   ./scripts/fmt.sh --check      # vérifie sans écrire, code retour !=0 si écart
+#   ./scripts/fmt.sh --write      # force le mode écriture (par défaut)
+#   ./scripts/fmt.sh --staged     # ne formate/vérifie que les fichiers indexés
+#   ./scripts/fmt.sh --changed    # ne traite que les fichiers modifiés vs origin/main
+#   ./scripts/fmt.sh --help       # aide
 #
-# Options:
-#   --check        N’écrit rien, vérifie seulement (renvoie code ≠ 0 si diff)
-#   --changed      Ne traite que les fichiers modifiés vs HEAD
-#   --staged       Ne traite que les fichiers indexés (staged)
-#   --rust|--vit|--node|--shell|--docs|--all   Cibles (all par défaut)
+# Outils pris en charge (utilisés s’ils sont disponibles) :
+# - vitfmt (Vitte)       : .vitte .vit
+# - cargo fmt (Rust)     : crates, toolchains
+# - shfmt (Shell)        : .sh
+# - prettier (Web/Docs)  : .md .mdx .json .yml .yaml .css .scss .html .xml .svg .js .jsx .ts .tsx
+# - black (Python)       : .py
+# - clang-format (C/C++) : .c .h .cpp .hpp .cc .cxx .hh
 #
-# Exemples:
-#   scripts/fmt.sh --all
-#   scripts/fmt.sh --check --changed
-#   scripts/fmt.sh --vit --shell
-#
-# SPDX-License-Identifier: MIT
+# Astuce: en CI, utilisez `./scripts/fmt.sh --check` pour fail si écart.
+# -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
 
-# ----------------------------- UX & helpers -----------------------------
-is_tty() { [[ -t 1 ]]; }
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$ROOT"
+
+# --- Couleurs ----------------------------------------------------------------
+if [ -t 1 ]; then
+  bld=$'\e[1m'; gry=$'\e[90m'; grn=$'\e[32m'; yel=$'\e[33m'; red=$'\e[31m'; rst=$'\e[0m'
+else
+  bld=""; gry=""; grn=""; yel=""; red=""; rst=""
+fi
+
+# --- Helpers -----------------------------------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
 
-if is_tty && have tput; then
-  C_RESET="$(tput sgr0 || true)"
-  C_BOLD="$(tput bold || true)"
-  C_DIM="$(tput dim || true)"
-  C_RED="$(tput setaf 1 || true)"
-  C_GREEN="$(tput setaf 2 || true)"
-  C_YELLOW="$(tput setaf 3 || true)"
-  C_BLUE="$(tput setaf 4 || true)"
-else
-  C_RESET="" C_BOLD="" C_DIM="" C_RED="" C_GREEN="" C_YELLOW="" C_BLUE=""
-fi
+section() { echo -e "${bld}==>${rst} $*"; }
 
-say()  { echo -e "${C_BOLD}${C_BLUE}▶${C_RESET} $*"; }
-ok()   { echo -e "${C_GREEN}✓${C_RESET} $*"; }
-warn() { echo -e "${C_YELLOW}⚠${C_RESET} $*"; }
-die()  { echo -e "${C_RED}✗${C_RESET} $*" >&2; exit 1; }
+die() { echo -e "${red}error:${rst} $*" >&2; exit 1; }
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
-cd "$ROOT_DIR"
+# --- Flags -------------------------------------------------------------------
+MODE="write"   # write|check
+SCOPE="all"    # all|staged|changed
 
-# ----------------------------- Options -----------------------------
-CHECK=0
-ONLY_CHANGED=0
-ONLY_STAGED=0
-DO_RUST=0
-DO_VIT=0
-DO_NODE=0
-DO_SHELL=0
-DO_DOCS=0
-
-usage() {
-  cat <<'EOF'
-Usage: scripts/fmt.sh [--check] [--changed|--staged] [--rust|--vit|--node|--shell|--docs|--all]
-EOF
-}
-
-ARGS=()
-while [[ $# -gt 0 ]]; do
+while (( $# )); do
   case "$1" in
-    --check)   CHECK=1; shift;;
-    --changed) ONLY_CHANGED=1; shift;;
-    --staged)  ONLY_STAGED=1; shift;;
-    --rust)    DO_RUST=1; shift;;
-    --vit)     DO_VIT=1; shift;;
-    --node)    DO_NODE=1; shift;;
-    --shell)   DO_SHELL=1; shift;;
-    --docs)    DO_DOCS=1; shift;;
-    --all)     DO_RUST=1; DO_VIT=1; DO_NODE=1; DO_SHELL=1; DO_DOCS=1; shift;;
-    -h|--help) usage; exit 0;;
-    *)         ARGS+=("$1"); shift;;
+    -c|--check) MODE="check" ;;
+    -w|--write) MODE="write" ;;
+    --staged)   SCOPE="staged" ;;
+    --changed)  SCOPE="changed" ;;
+    -h|--help)
+      sed -n '1,40p' "$0"; exit 0;;
+    *) die "flag inconnu: $1" ;;
   esac
+  shift
 done
-set -- "${ARGS[@]}"
 
-if [[ $DO_RUST$DO_VIT$DO_NODE$DO_SHELL$DO_DOCS == 00000 ]]; then
-  DO_RUST=1; DO_VIT=1; DO_NODE=1; DO_SHELL=1; DO_DOCS=1
-fi
+# --- Sélection des fichiers ---------------------------------------------------
+# Utilise git ls-files par défaut ; staged/changed selon drapeaux.
+mapfile -t ALL_TRACKED < <(git ls-files)
 
-# Conflit changed/staged
-if [[ "$ONLY_CHANGED" == "1" && "$ONLY_STAGED" == "1" ]]; then
-  die "--changed et --staged sont exclusifs"
-fi
-
-# ----------------------------- Sélection fichiers -----------------------------
-git_ls_changed() {
-  git diff --name-only --diff-filter=AMCR HEAD --
-}
-git_ls_staged() {
-  git diff --name-only --cached --diff-filter=AMCR --
-}
-
-# Utilitaire: produit une liste de fichiers filtrés par extensions, en respectant changed/staged.
-# Args: EXT_GLOB (grep -E), FIND_PREDICATE (find -name ... -o ...)
-pick_files() {
-  local GREP_RE="$1"; shift
-  if [[ "$ONLY_STAGED" == "1" ]] && have git && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    git_ls_staged | grep -E "$GREP_RE" || true
-    return
-  fi
-  if [[ "$ONLY_CHANGED" == "1" ]] && have git && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    git_ls_changed | grep -E "$GREP_RE" || true
-    return
-  fi
-  # fallback: find
-  # shellcheck disable=SC2046
-  find . -type f \( "$@" \) \
-    -not -path "./.git/*" \
-    -not -path "./target/*" \
-    -not -path "./node_modules/*" \
-    -not -path "./dist/*" \
-    -print 2>/dev/null || true
-}
-
-# ----------------------------- Formatters -----------------------------
-format_rust() {
-  [[ -f Cargo.toml ]] || { warn "Cargo.toml introuvable — skip Rust"; return; }
-  have cargo || die "cargo introuvable"
-  if [[ "$CHECK" == "1" ]]; then
-    say "Rust — cargo fmt --all -- --check"
-    cargo fmt --all -- --check
+if [ "$SCOPE" = "staged" ]; then
+  mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACMR)
+elif [ "$SCOPE" = "changed" ]; then
+  # compare à origin/main si présent, sinon à main/local
+  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || true)"
+  if [ -n "$upstream" ]; then
+    ref="$upstream"
   else
-    say "Rust — cargo fmt --all"
+    ref="main"
+  fi
+  mapfile -t FILES < <(git diff --name-only --diff-filter=ACMR "$ref"...)
+else
+  FILES=("${ALL_TRACKED[@]}")
+fi
+
+filter_ext() {
+  # $1: extensions séparées par espace (ex: "vitte vit")
+  # lit la liste FILES sur stdin et filtre par ext
+  exts="$1"
+  awk -v exts="$exts" '
+    BEGIN {
+      n=split(exts, E, " ");
+      for (i=1;i<=n;i++) ext[E[i]]=1
+    }
+    {
+      fn=$0;
+      dot = index(fn, ".") ? substr(fn, length(fn)-index(reverse(fn),".")+2) : "";
+      # on prend l’extension après le dernier point
+      i = match(fn, /[^.]+$/);
+      if (i>0) e=substr(fn, RSTART);
+      if (e in ext) print fn;
+    }' < <(printf "%s\n" "${FILES[@]}")
+}
+
+# --- Groupes de fichiers par outil -------------------------------------------
+mapfile -t VITTE_FILES < <(printf "%s\n" "${FILES[@]}" | grep -E '\.(vitte|vit)$' || true)
+mapfile -t RUST_FILES  < <(printf "%s\n" "${FILES[@]}" | grep -E '\.rs$' || true)
+mapfile -t SH_FILES    < <(printf "%s\n" "${FILES[@]}" | grep -E '\.sh$' || true)
+mapfile -t PY_FILES    < <(printf "%s\n" "${FILES[@]}" | grep -E '\.py$' || true)
+mapfile -t CXX_FILES   < <(printf "%s\n" "${FILES[@]}" | grep -E '\.(c|cc|cxx|cpp|h|hh|hpp)$' || true)
+mapfile -t PRETTIER_FILES < <(printf "%s\n" "${FILES[@]}" | grep -Ei '\.(md|mdx|json|ya?ml|css|scss|html?|xml|svg|mjs|cjs|jsx?|tsx?)$' || true)
+
+# --- Résultats / échecs ------------------------------------------------------
+FAILED=0
+fail_if() { if [ "$MODE" = "check" ] && [ "$1" -ne 0 ]; then FAILED=1; fi; }
+
+# --- vitfmt (Vitte) ----------------------------------------------------------
+if [ ${#VITTE_FILES[@]} -gt 0 ] && have vitfmt; then
+  section "Vitte • vitfmt (${MODE})"
+  if [ "$MODE" = "check" ]; then
+    # On passe par la racine pour éviter les limites d’arguments
+    vitfmt --check .
+    rc=$?
+  else
+    vitfmt .
+    rc=$?
+  fi
+  if [ $rc -ne 0 ]; then echo -e "${red}vitfmt a trouvé des écarts.${rst}"; fail_if 1; else echo -e "${grn}OK vitfmt${rst}"; fi
+else
+  [ ${#VITTE_FILES[@]} -eq 0 ] || echo -e "${yel}skip vitfmt${rst} (binaire introuvable)"
+fi
+
+# --- Rust • cargo fmt --------------------------------------------------------
+if [ ${#RUST_FILES[@]} -gt 0 ] && have cargo; then
+  section "Rust • cargo fmt (${MODE})"
+  if [ "$MODE" = "check" ]; then
+    cargo fmt --all -- --check || FAILED=1
+  else
     cargo fmt --all
   fi
-  ok "Rust format OK"
-}
+else
+  [ ${#RUST_FILES[@]} -eq 0 ] || echo -e "${yel}skip cargo fmt${rst} (cargo introuvable)"
+fi
 
-# vitte-fmt (stdin) fichier par fichier.
-vitte_fmt_one() {
-  local f="$1"
-  local tmp="$(mktemp)"
-  if ! have vitte-fmt; then
-    die "vitte-fmt introuvable (requis pour --vit)"
-  fi
-  if [[ "$CHECK" == "1" ]]; then
-    if ! cat "$f" | vitte-fmt --stdin >"$tmp" 2>/dev/null; then
-      rm -f "$tmp"; return 1
-    fi
-    if ! cmp -s "$f" "$tmp"; then
-      echo "$f"    # rapporter le fichier modifié à l'appelant
-      rm -f "$tmp"
-      return 2
-    fi
-    rm -f "$tmp"
-    return 0
+# --- Shell • shfmt -----------------------------------------------------------
+if [ ${#SH_FILES[@]} -gt 0 ] && have shfmt; then
+  section "Shell • shfmt (${MODE})"
+  if [ "$MODE" = "check" ]; then
+    # -d: diff, -s: simplifier, -i 2: indent 2 espaces
+    shfmt -d -s -i 2 "${SH_FILES[@]}" || FAILED=1
   else
-    if ! cat "$f" | vitte-fmt --stdin >"$tmp"; then
-      rm -f "$tmp"; return 1
-    fi
-    if ! cmp -s "$f" "$tmp"; then
-      mv "$tmp" "$f"
-      return 0
-    fi
-    rm -f "$tmp"
-    return 0
+    shfmt -w -s -i 2 "${SH_FILES[@]}"
+  fi
+else
+  [ ${#SH_FILES[@]} -eq 0 ] || echo -e "${yel}skip shfmt${rst} (shfmt introuvable)"
+fi
+
+# --- Python • black ----------------------------------------------------------
+if [ ${#PY_FILES[@]} -gt 0 ] && have black; then
+  section "Python • black (${MODE})"
+  if [ "$MODE" = "check" ]; then
+    black --check "${PY_FILES[@]}" || FAILED=1
+  else
+    black "${PY_FILES[@]}"
+  fi
+else
+  [ ${#PY_FILES[@]} -eq 0 ] || echo -e "${yel}skip black${rst} (black introuvable)"
+fi
+
+# --- C/C++ • clang-format -----------------------------------------------------
+if [ ${#CXX_FILES[@]} -gt 0 ] && have clang-format; then
+  section "C/C++ • clang-format (${MODE})"
+  if [ "$MODE" = "check" ]; then
+    # --dry-run -Werror échoue en cas d’écart
+    clang-format --dry-run -Werror "${CXX_FILES[@]}" || FAILED=1
+  else
+    clang-format -i "${CXX_FILES[@]}"
+  fi
+else
+  [ ${#CXX_FILES[@]} -eq 0 ] || echo -e "${yel}skip clang-format${rst} (clang-format introuvable)"
+fi
+
+# --- Docs/Web • prettier ------------------------------------------------------
+run_prettier() {
+  if have prettier; then
+    prettier "$@"
+  elif have npx; then
+    npx --yes prettier "$@"
+  else
+    return 127
   fi
 }
 
-format_vit() {
-  say "Vitte — vitte-fmt (${CHECK:+check})"
-  local GREP_RE='(\.vitte|\.vit)$'
-  local FILES=()
-  while IFS= read -r f; do FILES+=("$f"); done < <(pick_files "$GREP_RE" -name '*.vitte' -o -name '*.vit')
-  if [[ "${#FILES[@]}" -eq 0 ]]; then
-    warn "Aucun fichier .vitte/.vit"
-    return
-  fi
-
-  local CHANGED=0
-  local FAIL=0
-  for f in "${FILES[@]}"; do
-    if ! vitte_fmt_one "$f"; then
-      warn "vitte-fmt KO: $f"
-      FAIL=1
-    else
-      # vitte_fmt_one renvoie 2 via echo → on l'a capté ? (on a préféré echo pour reporter)
-      :
-    fi
-  done
-
-  if [[ "$CHECK" == "1" ]]; then
-    # Refaire un passage pour lister ceux qui diffèrent
-    local MODS=()
-    for f in "${FILES[@]}"; do
-      if ! cat "$f" | vitte-fmt --stdin | cmp -s "$f" -; then
-        MODS+=("$f")
-      fi
-    done
-    if [[ "${#MODS[@]}" -gt 0 ]]; then
-      printf '%s\n' "${MODS[@]}" | sed 's/^/diff: /'
-      die "Vitte format check a trouvé des diffs"
+if [ ${#PRETTIER_FILES[@]} -gt 0 ]; then
+  section "Docs/Web • prettier (${MODE})"
+  if [ "$MODE" = "check" ]; then
+    if ! run_prettier --check "${PRETTIER_FILES[@]}"; then
+      echo -e "${yel}prettier indisponible (ni prettier ni npx).${rst}"
+      FAILED=1
     fi
   else
-    [[ "$FAIL" -eq 0 ]] && ok "Vitte format OK" || die "Vitte format a rencontré des erreurs"
+    if ! run_prettier --write "${PRETTIER_FILES[@]}"; then
+      echo -e "${yel}prettier indisponible (ni prettier ni npx).${rst}"
+      # pas d’échec en write si outil absent
+    fi
   fi
-}
+fi
 
-# Prettier pour node/docs
-format_node_docs() {
-  if ! have npx; then
-    warn "npx introuvable — skip Prettier"
-    return
-  fi
-  local MODE_ARGS=()
-  if [[ "$CHECK" == "1" ]]; then MODE_ARGS=(-c); else MODE_ARGS=(-w); fi
-
-  # Cibles Node (extension VS Code)
-  local VS_DIR="editor-plugins/vscode"
-  if [[ -d "$VS_DIR" ]]; then
-    say "Prettier — extension VS Code (${CHECK:+check})"
-    ( cd "$VS_DIR"
-      # TS / JSON / JSONC (tmLanguage est JSON), md
-      npx --yes prettier "${MODE_ARGS[@]}" \
-        "src/**/*.ts" \
-        "syntaxes/**/*.json" \
-        "language-configuration.json" \
-        "snippets/**/*.json" \
-        "*.md" || die "Prettier (vscode) KO"
-    )
+# --- Résumé ------------------------------------------------------------------
+echo
+if [ "$MODE" = "check" ]; then
+  if [ "$FAILED" -ne 0 ]; then
+    echo -e "${red}✖ Format check: échecs détectés.${rst}"
+    exit 1
   else
-    warn "Extension VS Code absente — skip Node"
+    echo -e "${grn}✔ Format check: tout est propre.${rst}"
   fi
+else
+  echo -e "${grn}✔ Formatage appliqué.${rst}"
+fi
 
-  # Docs/Repo globaux
-  say "Prettier — docs & repo (${CHECK:+check})"
-  npx --yes prettier "${MODE_ARGS[@]}" \
-    "**/*.md" \
-    "**/*.json" \
-    "**/*.yml" \
-    "**/*.yaml" \
-    --ignore-path .gitignore \
-    --loglevel warn || die "Prettier (repo) KO"
-
-  ok "Prettier OK"
-}
-
-# shfmt pour scripts bash
-format_shell() {
-  have shfmt || { warn "shfmt introuvable — skip shell"; return; }
-  say "Shell — shfmt (${CHECK:+check})"
-  local FILES=()
-  while IFS= read -r f; do FILES+=("$f"); done < <(pick_files '\.sh$' -name '*.sh')
-
-  if [[ "${#FILES[@]}" -eq 0 ]]; then
-    warn "Aucun script .sh"
-    return
-  fi
-
-  if [[ "$CHECK" == "1" ]]; then
-    # -d imprime le diff et renvoie code ≠ 0 si diff
-    shfmt -d "${FILES[@]}" || die "shfmt diff KO"
-  else
-    shfmt -w "${FILES[@]}"
-  fi
-  ok "Shell format OK"
-}
-
-# ----------------------------- Orchestration -----------------------------
-RC=0
-[[ "$DO_RUST"  == "1" ]] && format_rust  || true
-[[ "$DO_VIT"   == "1" ]] && format_vit   || true
-[[ "$DO_NODE"  == "1" ]] && format_node_docs || true
-[[ "$DO_SHELL" == "1" ]] && format_shell || true
-[[ "$DO_DOCS"  == "1" ]] && : # déjà pris en charge par Prettier ci-dessus
-
-ok "Formatage terminé ${CHECK:+(check-only)}"
+# Fin.
